@@ -24,14 +24,14 @@ connection.onInitialize((params: InitializeParams) => {
     capabilities: {
       textDocumentSync: {
         openClose: true,
-        save: false,
+        save: { includeText: false },
         change: TextDocumentSyncKind.Full,
       },
       // UTF-8 is not supported in vscode-languageserver/node. See:
       // https://github.com/microsoft/vscode-languageserver-node/issues/1224
       positionEncoding: PositionEncodingKind.UTF16,
       workspace: {
-        workspaceFolders: { supported: true },
+        workspaceFolders: { supported: false },
         fileOperations: {
           didDelete: {
             filters: [{ pattern: { /* matches: 'folder', */ glob: '**' } }],

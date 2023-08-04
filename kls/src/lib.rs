@@ -15,9 +15,9 @@ use lsp_types::{
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, FileChangeType, FileDelete, FileEvent,
-    InitializeParams, PublishDiagnosticsParams, Range, TextDocumentItem, Url,
-    VersionedTextDocumentIdentifier,
+    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams, Range,
+    TextDocumentItem, Url, VersionedTextDocumentIdentifier,
 };
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
@@ -35,8 +35,6 @@ use kanata_parser::cfg::{FileContentProvider, ParseError};
 //     }
 // }
 
-// todo: Store parsed state here and update it when needed.
-// This will also allow to modify the parsed state for code generation.
 struct Kanata {
     root_folder: Option<Url>, // is None if file is opened without workspace.
 }
@@ -189,12 +187,12 @@ impl KanataLanguageServer {
             DidOpenTextDocument::METHOD => {
                 let DidOpenTextDocumentParams { text_document } = from_value(params).unwrap();
 
-                let event = LspEvent {
-                    lsp_method: method,
-                    lsp_file_extensions: unique_extensions(&[&text_document.uri]),
-                };
+                log!("opening: {}", text_document.uri);
+                if self.upsert_document(text_document).is_some() {
+                    log!("reopened tracked doc");
+                }
 
-                let diagnostics = self.on_did_open_text_document(text_document);
+                let diagnostics = self.reload_diagnostics();
                 self.send_diagnostics(&diagnostics);
             }
 
@@ -208,14 +206,12 @@ impl KanataLanguageServer {
 
                 let VersionedTextDocumentIdentifier { uri, version } = params.text_document;
 
-                let event = LspEvent {
-                    lsp_method: method,
-                    lsp_file_extensions: unique_extensions(&[&uri]),
-                };
-
                 let updated_doc = TextDocumentItem::new(uri, "kanata".into(), version, change.text);
-                let diagnostics = self.on_did_change_text_document(updated_doc);
-                self.send_diagnostics(&diagnostics);
+
+                let uri = updated_doc.uri.clone();
+                if self.upsert_document(updated_doc).is_none() {
+                    log!("updated untracked doc: {}", uri);
+                }
             }
 
             // This is the type of event we'll receive when a Kanata file is deleted, either via the
@@ -230,11 +226,6 @@ impl KanataLanguageServer {
                         uri
                     })
                     .collect();
-
-                let event = LspEvent {
-                    lsp_method: method,
-                    lsp_file_extensions: unique_extensions(&uris.iter().collect::<Vec<_>>()),
-                };
 
                 let diagnostics = self.on_did_change_watched_files(uris);
                 self.send_diagnostics(&diagnostics);
@@ -269,19 +260,17 @@ impl KanataLanguageServer {
                     }
                 }
 
-                let event = LspEvent {
-                    lsp_method: method,
-                    lsp_file_extensions: unique_extensions(&uris.iter().collect::<Vec<_>>()),
-                };
-
                 if let Some(diagnostics) = self.on_did_delete_files(uris) {
                     self.send_diagnostics(&diagnostics);
                 }
             }
 
-            // We don't care when a document is saved -- we already have the updated state thanks
-            // to `DidChangeTextDocument`.
-            DidSaveTextDocument::METHOD => (),
+            DidSaveTextDocument::METHOD => {
+                let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
+
+                let diagnostics = self.reload_diagnostics();
+                self.send_diagnostics(&diagnostics);
+            }
             // We don't care when a document is closed -- we care about all Kanata files in a
             // workspace folder regardless of which ones remain open.
             DidCloseTextDocument::METHOD => (),
@@ -295,22 +284,6 @@ impl KanataLanguageServer {
 
 /// Individual LSP notification handlers.
 impl KanataLanguageServer {
-    fn on_did_open_text_document(&mut self, doc: TextDocumentItem) -> Diagnostics {
-        log!("opening: {}", doc.uri);
-        if self.upsert_document(doc).is_some() {
-            log!("reopened tracked doc");
-        }
-        self.reload_diagnostics()
-    }
-
-    fn on_did_change_text_document(&mut self, doc: TextDocumentItem) -> Diagnostics {
-        let uri = doc.uri.clone();
-        if self.upsert_document(doc).is_none() {
-            log!("updated untracked doc: {}", uri);
-        }
-        self.reload_diagnostics()
-    }
-
     // This is (currently) only used to handle deletions of Kanata *files*. `DidChangeWatchedFiles`
     // events come from the `deleteWatcher` filesystem watcher in the extension client. Due to [a
     // limitation of VS Code's filesystem watcher][0], we don't receive deletion events for Kanata
@@ -453,7 +426,7 @@ impl KanataLanguageServer {
         }
     }
 
-    // Returns Position with UTF-16 based char (column).
+    // Returns Range with UTF-16 column positions.
     fn lsp_range_from_kanata_diagnostic_context(&self, diagnostic: &ParseError) -> Range {
         let span = diagnostic.span.clone().unwrap_or_default();
         Range {
@@ -509,7 +482,7 @@ impl KanataLanguageServer {
                 let diagnostic = Diagnostic {
                     range: self.lsp_range_from_kanata_diagnostic_context(&diagnostic),
                     severity: Some(severity),
-                    source: Some("Kanata Language Server'".to_owned()),
+                    source: Some("vscode-kanata".to_owned()),
                     message: message.clone(),
                     ..Default::default()
                 };
@@ -518,7 +491,7 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    fn load_documents(&self) -> Vec<ParseError> {
+    fn parse_documents(&self) -> Vec<ParseError> {
         let result = self.kanata.parse(&self.main_cfg_file, &self.documents);
         match result {
             Ok(_) => vec![],
@@ -527,7 +500,7 @@ impl KanataLanguageServer {
     }
 
     fn get_diagnostics(&self) -> Diagnostics {
-        self.load_documents()
+        self.parse_documents()
             .into_iter()
             .flat_map(|diagnostic| self.diagnostics_from_kanata_parse_error(&diagnostic))
             .fold(Diagnostics::new(), |mut acc, (doc, diagnostic)| {

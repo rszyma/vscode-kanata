@@ -3,7 +3,6 @@
 use std::rc::Rc;
 
 use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
-use serde::Serialize;
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
 // type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
@@ -23,19 +22,6 @@ pub(crate) fn empty_diagnostics_for_doc(
 ) -> (Url, PublishDiagnosticsParams) {
     let params = PublishDiagnosticsParams::new(uri.clone(), vec![], Some(doc.version));
     (uri.clone(), params)
-}
-
-#[derive(Default, Serialize)]
-pub(crate) struct LspEvent<'a> {
-    pub(crate) lsp_method: &'a str,
-    pub(crate) lsp_file_extensions: HashSet<String>,
-}
-
-pub(crate) fn unique_extensions(uris: &[&Url]) -> HashSet<String> {
-    uris.iter()
-        .filter_map(|uri| uri.as_str().rsplit_once('.'))
-        .map(|(_, suffix)| suffix.into())
-        .collect()
 }
 
 pub fn utf16_length(str: impl AsRef<str>) -> usize {

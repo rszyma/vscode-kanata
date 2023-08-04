@@ -5,12 +5,15 @@ Language support for .kbd kanata (https://github.com/jtroo/kanata) configuration
 ### Features
 
 - syntax highlighting
-- syntax checking (shows errors and their position)
+- syntax validation (shows errors and their position)
 
-### Known issues / current limitations
+### Settings
 
-- Syntax checking currently only works when.  `kanata.kbd`.
-- Absolute paths in `include` action that point outside current workspace are supported.
+- If you want use `include` blocks in your kanata config files you need to enable the support for them in VS Code settings under "Kanata" category.
+
+### Known issues and limitations
+
+- Absolute paths in `include` blocks that point outside the opened workspace aren't supported.
 
 ### Changelog
 

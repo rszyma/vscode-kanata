@@ -16,6 +16,8 @@ make package
 ```
 2. Right click on `kanata.vsix` file VS Code file explorer and "Install Extension VSIX".
 
+Also see [./vscode/DEVELOPMENT.md](./vscode/DEVELOPMENT.md)
+
 ### Credits
 
 - https://github.com/jtroo/kanata/ - provides kanata-parser crate

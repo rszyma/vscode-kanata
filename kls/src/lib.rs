@@ -453,7 +453,7 @@ impl KanataLanguageServer {
         }
     }
 
-    // Returns UTF-16 based char (column).
+    // Returns Position with UTF-16 based char (column).
     fn lsp_range_from_kanata_diagnostic_context(&self, diagnostic: &ParseError) -> Range {
         let span = diagnostic.span.clone().unwrap_or_default();
         Range {

@@ -1,6 +1,6 @@
 # vscode-kanata
 
-VS Code extension for configuration language of [kanata](https://github.com/jtroo/kanata).
+A VS Code extension that adds language support for [kanata](https://github.com/jtroo/kanata) configuration files .
 
 ### Features
 

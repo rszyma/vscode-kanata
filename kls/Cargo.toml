@@ -1,0 +1,37 @@
+[package]
+name = "kls"
+version = "0.1.0"
+authors = ["rszyma <rszyma.dev@gmail.com>"]
+description = "Language server for kanata keyboard remapper"
+keywords = ["kanata", "lsp", "vscode"]
+categories = ["config", "development-tools", "parsing"]
+homepage = "https://github.com/rszyma/vscode-kanata"
+repository = "https://github.com/rszyma/vscode-kanata"
+readme = "README.md"
+license = "LGPL-3.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+bench = false
+
+[dependencies]
+# kanata-parser = "0.19.0"
+# Uncomment below and comment out above for testing local changes.
+# Otherwise any changes to the local files will not reflect in the compiled
+# binary.
+kanata-parser = { path = "../parser" }
+
+console_error_panic_hook = "0.1.6"
+js-sys = "0.3.53"
+lsp-types = "0.94.0"
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.3.1"
+wasm-bindgen = "0.2.76"
+web-sys = { version = "0.3.64", features = ["console"] }
+unicode-width = "0.1.10"
+rustc-hash = "1.1.0"
+anyhow = "1.0.72"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.26"

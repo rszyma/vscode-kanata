@@ -1,0 +1,109 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "kanata",
+    "foldingStartMarker": "\\(",
+    "foldingStopMarker": "\\)",
+    "patterns": [
+        {
+            "match": "(;;).*$\\n?",
+            "name": "comment.line.semicolon.kanata",
+            "captures": {
+                "1": {
+                    "name": "punctuation.definition.comment.kanata"
+                }
+            }
+        },
+        {
+            "begin": "#\\|",
+            "end": "\\|#",
+            "name": "comment.block.kanata"
+        },
+        {
+            "match": "(?:^|\\s|[#()\\]\\[{}])(defcfg|defsrc|defalias|deflayer|defvar|deffakekeys|defseq|defchords|defaliasenvcond|defoverrides|deflocalkeys-linux|deflocalkeys-win|deflocalkeys-wintercept)(?=\\s|[#()\\]\\[{}]|$)",
+            "captures": {
+                "1": {
+                    "name": "keyword.control.kanata"
+                }
+            }
+        },
+        {
+            "match": "(?:^|\\s|[#()\\]\\[{}])(lrld|lrld-next|lrnx|lrld-prev|lrpv|sldr|mlft|mouseleft|mrgt|mouseright|mmid|mousemid|mfwd|mouseforward|mbck|mousebackward|mltp|mousetapleft|mrtp|mousetapright|mmtp|mousetapmid|mftp|mousetapforward|mbtp|mousetapbackward|rpt|repeat|dynamic-macro-record-stop)(?=\\s|[#()\\]\\[{}]|$)",
+            "captures": {
+                "1": {
+                    "name": "constant.language.kanata"
+                }
+            }
+        },
+        {
+            "match": "(?:^|\\s|[#()\\]\\[{}-])((?:@|\\$).+?)(?=\\s|[#()\\]\\[{}]|$)",
+            "captures": {
+                "1": {
+                    "name": "variable.other.kanata"
+                }
+            }
+        },
+        {
+            "begin": "\"",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin"
+                }
+            },
+            "end": "\"",
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end"
+                }
+            },
+            "name": "string.quoted.double",
+            "patterns": [
+                {
+                    "match": "(\\[abtnre0\"|\\\\])",
+                    "name": "constant.character.escape.kanata"
+                },
+                {
+                    "match": "(\\[^abtnre0\"|\\\\])",
+                    "name": "invalid.illegal.escape.kanata"
+                }
+            ]
+        },
+        {
+            "match": "(?:^|\\s|[#()\\]\\[{}])(layer-switch|layer-toggle|layer-while-held|tap-hold|tap-hold-press|tap-hold-release|tap-hold-press-timeout|tap-hold-release-timeout|tap-hold-release-keys|multi|macro|macro-repeat|macro-release-cancel|macro-repeat-release-cancel|unicode|one-shot|one-shot-press|one-shot-release|one-shot-press-pcancel|one-shot-release-pcancel|tap-dance|tap-dance-eager|chord|release-key|release-layer|on-press-fakekey|on-release-fakekey|on-press-fakekey-delay|on-release-fakekey-delay|mwheel-up|mwheel-down|mwheel-left|mwheel-right|movemouse-up|movemouse-down|movemouse-left|movemouse-right|movemouse-accel-up|movemouse-accel-down|movemouse-accel-left|movemouse-accel-right|setmouse|dynamic-macro-record|dynamic-macro-play|arbitrary-code|cmd|cmd-output-keys|fork|caps-word|caps-word-custom|dynamic-macro-record-stop-truncate)(?=\\s|[#()\\]\\[{}]|$)",
+            "captures": {
+                "1": {
+                    "name": "entity.name.function.kanata"
+                }
+            }
+        },
+        {
+            "match": "(?:^|\\s|[#()\\]\\[{}])(\\\\|\\{|\\}|'|/|\\.|,|-|=|\\[|\\]|;|grv|1|2|3|4|5|6|7|8|9|0|min|eql|bspc|bks|tab|q|w|e|r|t|y|u|i|o|p|lbrc|rbrc|bksl|yen|¥|caps|a|s|d|f|g|h|j|k|l|scln|apo|apos|ret|return|ent|enter|lshift|lshft|lsft|shft|sft|z|x|c|v|b|n|m|comm|kp=|clr|kp0|kp1|kp2|kp3|kp4|kp5|kp6|kp7|kp8|kp9|kprt|kp/|kp\\+|kp\\*|kp-|kp\\.|ssrq|sys|102d|lsgt|nubs|nonusbslash|scrlck|slck|pause|break|brk|wkup|esc|rshift|rshft|rsft|lctrl|lctl|ctl|lalt|alt|spc|ralt|comp|cmps|cmp|menu|apps|lmeta|lmet|met|rmeta|rmet|rctrl|rctl|del|ins|bck|fwd|pgup|pgdn|up|down|lft|left|rght|home|end|nlck|nlk|mute|volu|voldwn|vold|brup|bru|brdown|brdwn|brdn|blup|bldn|next|pp|prev|f1|f2|f3|f4|f5|f6|f7|f8|f9|f10|f11|f12|f13|f14|f15|f16|f17|f18|f19|f20|f21|f22|f23|f24|kana|katakana|katakanahiragana|hiragana|cnv|conv|henk|hnk|henkan|ncnv|mhnk|muhenkan|ro|prtsc|prnt|mlft|mouseleft|mrgt|mouseright|mmid|mousemid|mfwd|mouseforward|mbck|mousebackward|hmpg|homepage|mdia|media|mail|email|calc|plyr|player|powr|power|zzz|sleep)(?=\\s|[#()\\]\\[{}]|$)",
+            "captures": {
+                "1": {
+                    "name": "string.kanata"
+                }
+            }
+        }
+    ],
+    "repository": {
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.kanata",
+                    "match": "\\b(-{3,})\\b"
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.kanata",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.kanata",
+                    "match": "\\\\."
+                }
+            ]
+        }
+    },
+    "scopeName": "source.kanata"
+}

@@ -1,6 +1,4 @@
 **/target
 **/node_modules
 **/out
-**/*.vsix
-keyberon
-kanata-parser
+yarn-error.log

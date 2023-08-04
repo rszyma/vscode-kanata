@@ -1,0 +1,38 @@
+
+(defsrc caps w a s d)
+(deflayer default (layer-while-held mouse) w a s d)
+(deflayer mouse _ @mmu @mml @mmd @mmr)
+
+(defvar
+  mmove-itvl 7
+  mmove-accel-t 2000
+  mmove-amnt-start 1
+  mmove-amnt-end 200
+)
+
+(deffakekeys
+  persistmouse (one-shot 1000 (layer-while-held mouse))
+)
+
+(defalias
+  mmu (multi
+    (layer-while-held mouse)
+    (on-release-fakekey persistmouse tap)
+    (movemouse-accel-up $mmove-itvl $mmove-accel-t $mmove-amnt-start $mmove-amnt-end)
+  )
+  mmd (multi
+    (layer-while-held mouse)
+    (on-release-fakekey persistmouse tap)
+    (movemouse-accel-down $mmove-itvl $mmove-accel-t $mmove-amnt-start $mmove-amnt-end)
+  )
+  mmr (multi
+    (layer-while-held mouse)
+    (on-release-fakekey persistmouse tap)
+    (movemouse-accel-right $mmove-itvl $mmove-accel-t $mmove-amnt-start $mmove-amnt-end)
+  )
+  mml (multi
+    (layer-while-held mouse)
+    (on-release-fakekey persistmouse tap)
+    (movemouse-accel-left $mmove-itvl $mmove-accel-t $mmove-amnt-start $mmove-amnt-end)
+  )
+)

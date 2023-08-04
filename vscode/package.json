@@ -1,0 +1,93 @@
+{
+  "private": true,
+  "version": "0.1.0",
+  "name": "vscode-kanata",
+  "displayName": "Kanata Configuration Language",
+  "author": "rszyma",
+  "publisher": "rszyma",
+  "icon": "kanata_icon.png",
+  "description": "Language support for kanata configuration files",
+  "keywords": [
+    "kanata",
+    "keyboard",
+    "lsp"
+  ],
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rszyma/vscode-kanata"
+  },
+  "license": "LGPL-3.0",
+  "engines": {
+    "node": ">=8.10.0",
+    "vscode": "^1.80.0"
+  },
+  "main": "./out/client.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kanata",
+        "aliases": [
+          "Kanata",
+          "kanata"
+        ],
+        "extensions": [
+          ".kbd"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kanata",
+        "scopeName": "source.kanata",
+        "path": "./syntaxes/kanata.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Kanata",
+      "properties": {}
+    }
+  },
+  "scripts": {
+    "package": "vsce package --yarn --githubBranch main --out kanata.vsix",
+    "publish": "vsce publish --yarn --githubBranch main --packagePath kanata.vsix",
+    "typecheck": "tsc --noEmit",
+    "fix": "gts fix",
+    "lint": "gts lint -- . --max-warnings 0",
+    "fmtwrite": "prettier --write 'client/**/*.ts' 'server/**/*.ts' 'test/**/*.ts'",
+    "fmtcheck": "prettier --check 'client/**/*.ts' 'server/**/*.ts' 'test/**/*.ts'",
+    "test": "tsc --build test && yarn esbuild-all && node ./out/test/src/runTest.js",
+    "esbuild-client": "esbuild client=./client/src --bundle --outdir=out --external:vscode --format=cjs --platform=node",
+    "esbuild-server": "esbuild server=./server/src --bundle --outdir=out --external:vscode --format=cjs --platform=node",
+    "esbuild-all": "yarn esbuild-server --sourcemap && yarn esbuild-client --sourcemap",
+    "vscode:prepublish": "yarn esbuild-server --minify && yarn esbuild-client --minify"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0",
+    "vscode-languageserver": "^8.1.0"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/jest": "^29.5.3",
+    "@types/lodash": "^4.14.196",
+    "@types/node": "^20.4.6",
+    "@types/semver": "^7.5.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.4",
+    "@vscode/vsce": "^2.20.0",
+    "esbuild": "^0.18.17",
+    "glob": "^10.3.3",
+    "gts": "^5.0.0",
+    "jest": "^29.6.2",
+    "semver": "^7.5.4",
+    "typescript": "^5.1.6"
+  }
+}

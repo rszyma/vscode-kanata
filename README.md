@@ -1,10 +1,10 @@
-# kanata-language-server
+# vscode-kanata
 
-- language server for https://github.com/jtroo/kanata
+VS Code extension for configuration language of [kanata](https://github.com/jtroo/kanata).
 
 ### Features
 
-[list of features](./vscode/README.md#features)
+A list of features is available [here](./vscode/README.md#features)
 
 ### Installing from source
 
@@ -14,7 +14,7 @@ git clone https://github.com/rszyma/vscode-kanata.git
 cd vscode-kanata/vscode
 make package
 ```
-2. Right click on `kanata.vsix` file VS Code browser and "Install Extension VSIX".
+2. Right click on `kanata.vsix` file VS Code file explorer and "Install Extension VSIX".
 
 ### Credits
 

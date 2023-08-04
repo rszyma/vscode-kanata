@@ -1,0 +1,2 @@
+# Ignore Cargo.lock since this is library crate.
+Cargo.lock

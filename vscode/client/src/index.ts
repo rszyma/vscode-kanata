@@ -5,23 +5,156 @@ import { join } from 'path';
 import {
   ExtensionContext,
   RelativePattern,
-  TextDocument,
   Uri,
   window,
   workspace,
   WorkspaceFolder,
-  WorkspaceFoldersChangeEvent,
+  Disposable,
+  ConfigurationChangeEvent,
 } from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
+  SettingMonitor,
   TransportKind,
 } from 'vscode-languageclient/node';
 
 const extensionName = 'Kanata Configuration Language';
 const outputChannel = window.createOutputChannel(extensionName);
 
-let client: LanguageClient;
+// global extension instance
+let ext: Extension;
+
+export async function activate(ctx: ExtensionContext): Promise<void> {
+  // Update clients when workspace folders change.
+  ext = new Extension(ctx);
+  await ext.start();
+  ctx.subscriptions.push(ext);
+}
+
+export async function deactivate(): Promise<void> {
+  await ext.stop();
+}
+
+class Extension implements Disposable {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly toDisposeOnReload: { dispose(): any }[];
+  ctx: ExtensionContext;
+  client: LanguageClient | undefined;
+  settingMonitor: SettingMonitor | undefined;
+
+  constructor(ctx: ExtensionContext) {
+    this.toDisposeOnReload = [];
+    this.ctx = ctx;
+    // this.settingMonitor = new SettingMonitor(this.client, 'vscode-kanata');
+  }
+
+  async start() {
+    const openedWorkspaces = workspace.workspaceFolders;
+    let root: WorkspaceFolder | undefined;
+    if (openedWorkspaces) {
+      if (openedWorkspaces.length >= 2) {
+        await window.showInformationMessage(
+          'Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.'
+        );
+      }
+      root = openedWorkspaces.at(0);
+    }
+
+    await this.startClient(root);
+
+    this.ctx.subscriptions.push(
+      workspace.onDidChangeConfiguration(this.restart())
+    );
+  }
+
+  async stop() {
+    // Clear any outstanding diagnostics.
+    this.client?.diagnostics?.clear();
+    // Try flushing latest event in case one's in the chamber.
+    await this.client?.stop();
+  }
+
+  async startClient(root: WorkspaceFolder | undefined) {
+    const server = this.ctx.asAbsolutePath(join('out', 'server.js'));
+
+    if (root === undefined) {
+      console.log(
+        'single files opened in non-workspace are currently not supported'
+      );
+      return;
+    }
+
+    const deleteWatcher = workspace.createFileSystemWatcher(
+      kanataFilesInFolderPattern(root.uri),
+      true, // ignoreCreateEvents
+      true, // ignoreChangeEvents
+      false // ignoreDeleteEvents
+    );
+    const changeWatcher = workspace.createFileSystemWatcher(
+      kanataFilesInFolderPattern(root.uri),
+      false, // ignoreCreateEvents
+      false, // ignoreChangeEvents
+      true // ignoreDeleteEvents
+    );
+
+    // Clean up watchers when extension is deactivated.
+    this.toDisposeOnReload.push(deleteWatcher);
+    this.toDisposeOnReload.push(changeWatcher);
+
+    const serverOpts = { module: server, transport: TransportKind.ipc };
+    const clientOpts: LanguageClientOptions = {
+      documentSelector: [
+        { language: 'kanata', pattern: `${root.uri.fsPath}/**/*.kbd` },
+      ],
+      synchronize: { fileEvents: deleteWatcher },
+      diagnosticCollectionName: extensionName,
+      workspaceFolder: root,
+      outputChannel,
+      initializationOptions: {
+        mainConfigFile: workspace
+          .getConfiguration()
+          .get<string>('vscode-kanata.mainConfigFile', ''),
+        includesAndWorkspaces: workspace
+          .getConfiguration()
+          .get<string>('vscode-kanata.includesAndWorkspaces', ''),
+      },
+    };
+
+    this.client = new LanguageClient(extensionName, serverOpts, clientOpts);
+
+    // Start client and mark it for cleanup when the extension is deactivated.
+    await this.client.start();
+
+    this.toDisposeOnReload.push(this.client);
+
+    // [didOpen]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidOpenTextDocument
+    // [didChange]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidChangeTextDocument
+    this.toDisposeOnReload.push(changeWatcher.onDidCreate(openDocument));
+    this.toDisposeOnReload.push(changeWatcher.onDidChange(openDocument));
+
+    await openKanataFilesInFolder(root.uri);
+  }
+
+  restart() {
+    return async (e: ConfigurationChangeEvent) => {
+      if (e.affectsConfiguration('vscode-kanata')) {
+        console.log('vscode-kanata configuration has changed!');
+        await this.stop();
+        // todo: reload configuration?
+        await this.start();
+      } else {
+        console.log('vscode-kanata configuration has NOT changed');
+      }
+    };
+  }
+
+  dispose() {
+    this.toDisposeOnReload.forEach(disposable => {
+      disposable.dispose();
+    });
+  }
+}
 
 function kanataFilesInFolderPattern(folder: Uri) {
   return new RelativePattern(folder, '**/*.kbd');
@@ -30,113 +163,13 @@ function kanataFilesInFolderPattern(folder: Uri) {
 async function openKanataFilesInFolder(folder: Uri) {
   const pattern = kanataFilesInFolderPattern(folder);
   const uris = await workspace.findFiles(pattern);
-  return Promise.all(uris.map(openDocument));
+  for (const uri of uris) {
+    await openDocument(uri);
+  }
 }
 
 async function openDocument(uri: Uri) {
-  const uriMatch = (d: TextDocument) => d.uri.toString() === uri.toString();
-  const doc = workspace.textDocuments.find(uriMatch);
-  if (doc === undefined) await workspace.openTextDocument(uri);
-  return uri;
-}
-
-// Sets global client.
-async function setClient(folder: WorkspaceFolder, ctx: ExtensionContext) {
-  const server = ctx.asAbsolutePath(join('out', 'server.js'));
-
-  const kanataFilesIncluded: Set<string> = new Set();
-
-  const root: Uri = folder.uri;
-  const deleteWatcher = workspace.createFileSystemWatcher(
-    kanataFilesInFolderPattern(root),
-    true, // ignoreCreateEvents
-    true, // ignoreChangeEvents
-    false // ignoreDeleteEvents
-  );
-  const createChangeWatcher = workspace.createFileSystemWatcher(
-    kanataFilesInFolderPattern(root),
-    false, // ignoreCreateEvents
-    false, // ignoreChangeEvents
-    true // ignoreDeleteEvents
-  );
-
-  // Clean up watchers when extension is deactivated.
-  ctx.subscriptions.push(deleteWatcher);
-  ctx.subscriptions.push(createChangeWatcher);
-
-  const serverOpts = { module: server, transport: TransportKind.ipc };
-  const clientOpts: LanguageClientOptions = {
-    documentSelector: [
-      { language: 'kanata', pattern: `${root.fsPath}/**/*.kbd` },
-    ],
-    synchronize: { fileEvents: deleteWatcher },
-    diagnosticCollectionName: extensionName,
-    workspaceFolder: folder,
-    outputChannel,
-    initializationOptions: {
-      mainConfigFile: workspace
-        .getConfiguration()
-        .get<string>('vscode-kanata.mainConfigFile', ''),
-      includesAndWorkspaces: workspace
-        .getConfiguration()
-        .get<string>('vscode-kanata.includesAndWorkspaces', ''),
-    },
-  };
-
-  // initializationOptions: {
-  //   positionEncoding: PositionEncodingKind.UTF8,
-  //   // You can include any other initialization options here if needed.
-  // },
-
-  // set global client
-  client = new LanguageClient(extensionName, serverOpts, clientOpts);
-
-  // Start client and mark it for cleanup when the extension is deactivated.
-  ctx.subscriptions.push(client.start());
-
-  // [didOpen]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidOpenTextDocument
-  // [didChange]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidChangeTextDocument
-  ctx.subscriptions.push(createChangeWatcher.onDidCreate(openDocument));
-  ctx.subscriptions.push(createChangeWatcher.onDidChange(openDocument));
-
-  const openedFiles = await openKanataFilesInFolder(root);
-  openedFiles.forEach(f => kanataFilesIncluded.add(f.toString()));
-
-  // Ensure that all Kanata files across the workspace were included.
-  (await openKanataFilesInFolder(folder.uri)).forEach(file => {
-    if (!kanataFilesIncluded.has(file.toString()))
-      outputChannel.appendLine(`[kls] Kanata file not included: ${file}`);
-  });
-}
-
-async function stopClient() {
-  // Clear any outstanding diagnostics.
-  client.diagnostics?.clear();
-  // Try flushing latest event in case one's in the chamber.
-  return await client.stop();
-}
-
-// Support only 1 opened workspace at a time.
-function updateClients(context: ExtensionContext) {
-  return async function ({ added, removed }: WorkspaceFoldersChangeEvent) {
-    // Clean up clients for removed folders.
-    if (removed.length > 0) await stopClient();
-
-    // Create clients for added folders.
-    for (const folder of added) await setClient(folder, context);
-  };
-}
-
-export async function activate(context: ExtensionContext): Promise<void> {
-  const folders = workspace.workspaceFolders || [];
-
-  // Start clients for every folder in the workspace.
-  for (const folder of folders) await setClient(folder, context);
-
-  // Update clients when workspace folders change.
-  workspace.onDidChangeWorkspaceFolders(updateClients(context));
-}
-
-export async function deactivate(): Promise<void> {
-  await stopClient();
+  // workspace.openTextDocument has a build-in mechanism that avoids reopening
+  // already opened file, so no need to handle that manually.
+  await workspace.openTextDocument(uri);
 }

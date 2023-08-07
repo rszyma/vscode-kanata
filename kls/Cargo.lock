@@ -287,6 +287,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "unicode-width",
  "wasm-bindgen",
  "wasm-bindgen-test",

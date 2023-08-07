@@ -24,45 +24,32 @@ use wasm_bindgen::prelude::*;
 
 use kanata_parser::cfg::{FileContentProvider, ParseError};
 
-// todo: move this to kanata-parser
-// todo: A `figure_out_main_file` function that would require kanata-parser to have non-critical error
-// (like undefinied identifier) from critical ones, and continue parsing on non-cricital ones.
-// struct ParseError(ParseError);
-
-// impl Display for ParseError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "{}", self.0.msg)
-//     }
-// }
-
-struct Kanata {
-    root_folder: Option<Url>, // is None if file is opened without workspace.
+enum Either<A, B> {
+    Left(A),
+    Right(B),
 }
+
+struct Kanata {}
 
 fn kanata_extension_error(err_msg: impl AsRef<str>) -> String {
     format!(r"Kanata Extension: {}", err_msg.as_ref(),)
 }
 
 impl Kanata {
-    fn new(root_folder: Option<Url>) -> Self {
-        Self { root_folder }
+    fn new() -> Self {
+        Self {}
     }
 
-    // A problem: how to figure out which file is main:
-    // Potential solutions:
-    // - main files are the ones that contain `defsrc`
-    // - user hardcoded main file e.g. "kanata.kbd" (currently used solution)
-    // - other solution?
     fn parse(
         &self,
-        main_cfg_file: &Option<PathBuf>,
+        root_folder: &Option<Url>, // is None if file is opened without workspace.
+        main_cfg_file: Either<&Path, &Url>,
         all_documents: &Documents,
+        includes_setting: IncludesAndWorkspaces,
     ) -> Result<(), ParseError> {
         const INVALID_PATH_ERROR: &str = "The provided config file path is not valid";
 
         let mut loaded_files: HashSet<Url> = HashSet::default();
-
-        log!("workspace_root: {:?}", self.root_folder);
 
         let mut get_file_content_fn_impl = |filepath: &Path| {
             // Make the include paths relative to main config file instead of kanata executable.
@@ -70,7 +57,7 @@ impl Kanata {
                 Url::from_str(format!("file://{}", filepath.to_string_lossy()).as_ref())
                     .map_err(|_| INVALID_PATH_ERROR.to_string())?
             } else {
-                match &self.root_folder {
+                match root_folder {
                     Some(root) => {
                         Url::join(&root, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
                     }
@@ -81,14 +68,25 @@ impl Kanata {
                 }
             };
 
-            log!("searching URL ({}) across opened documents", file_url);
-            let doc = all_documents.get(&file_url).ok_or_else(|| {
-                if self.root_folder.is_none() {
-                    kanata_extension_error("Can't open this file for analysis, because it's outside of opened workspace.")
-                } else {
-                    kanata_extension_error("Included files can't be analyzed in non-workspace mode.")
+            let doc = match includes_setting {
+                IncludesAndWorkspaces::Single => return Err(kanata_extension_error(vec![
+                    "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
+                    "If you want to enable `includes` support, you need to:",
+                    "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
+                    "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
+                    "\t3. Change `Includes And Workspaces` to `workspace`",
+                ].join("\n"))),
+                IncludesAndWorkspaces::Workspace => {
+                    log!("searching URL ({}) across opened documents", file_url);
+                    all_documents.get(&file_url).ok_or_else(|| {
+                        if root_folder.is_some() {
+                            kanata_extension_error("Can't open this file for analysis, because it doesn't exist, or it outside of opened workspace.")
+                        } else {
+                            kanata_extension_error("Included files can't be analyzed in non-workspace mode.")
+                        }
+                    })?
                 }
-            })?;
+            };
 
             if !loaded_files.insert(file_url) {
                 return Err("The provided config file was already included before".to_string());
@@ -99,20 +97,23 @@ impl Kanata {
 
         let mut file_content_provider = FileContentProvider::new(&mut get_file_content_fn_impl);
 
-        // `get_file_content_fn_impl` already uses CWD of the main config path,
-        // so we need to provide only the name, not the whole path.
-        let cfg_file_name: PathBuf = main_cfg_file
-            .clone()
-            .unwrap_or_else(|| {
+        let cfg_file_name: PathBuf = match root_folder {
+            Some(_root) => match main_cfg_file {
+                // guaranted to be a single-segment path (just filename).
+                Either::Left(path) => path.to_owned(),
+                // this always is absolute path.
+                Either::Right(url) => PathBuf::from(url.path()),
+            },
+            // this is going to return an absolute path.
+            None => {
                 let url = all_documents
                     .first_key_value()
                     .expect("should be validated before")
                     .0;
-                url.path().into()
-            })
-            .file_name()
-            .ok_or_else(|| ParseError::new_without_span(INVALID_PATH_ERROR))?
-            .into();
+                PathBuf::from(url.path())
+            }
+        };
+
         let text = &file_content_provider
             .get_file_content(&cfg_file_name)
             .map_err(|e| ParseError::new_without_span(e))?;
@@ -130,14 +131,33 @@ impl Kanata {
     }
 }
 
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Clone)]
+struct Config {
+    #[serde(rename = "includesAndWorkspaces")]
+    includes_and_workspaces: IncludesAndWorkspaces,
+    #[serde(rename = "mainConfigFile")]
+    main_config_file: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+enum IncludesAndWorkspaces {
+    #[serde(rename = "single")]
+    Single,
+    #[serde(rename = "workspace")]
+    Workspace,
+}
+
 pub(crate) type Documents = BTreeMap<Url, TextDocumentItem>;
 pub(crate) type Diagnostics = BTreeMap<Url, PublishDiagnosticsParams>;
 
 #[wasm_bindgen]
 pub struct KanataLanguageServer {
-    main_cfg_file: Option<PathBuf>, // if unset, use every loaded .kbd file as entrypoint
     documents: Documents,
     kanata: Kanata,
+    config: Config,
+    root: Option<Url>,
     send_diagnostics_callback: js_sys::Function,
 }
 
@@ -148,14 +168,16 @@ impl KanataLanguageServer {
     pub fn new(initialize_params: JsValue, send_diagnostics_callback: &js_sys::Function) -> Self {
         console_error_panic_hook::set_once();
 
-        let InitializeParams { mut root_uri, .. } = from_value(initialize_params).unwrap();
+        let InitializeParams {
+            mut root_uri,
+            initialization_options,
+            ..
+        } = from_value(initialize_params).unwrap();
 
-        let main_cfg_file = if root_uri.is_none() {
-            log!("info: root_uri is not set; going to treat each .kbd file as main file.");
-            None
-        } else {
-            Some("kanata.kbd".into())
-        };
+        let config: Config =
+            serde_json::from_str(initialization_options.unwrap().to_string().as_str()).unwrap();
+
+        log!("{:?}", &config);
 
         if let Some(url) = &mut root_uri {
             // Ensure the path ends with a slash
@@ -166,10 +188,14 @@ impl KanataLanguageServer {
                     .push("");
             }
         }
+
+        log!("root: {:?}", root_uri.as_ref().map(|url| url.to_string()));
+
         Self {
-            main_cfg_file,
             documents: BTreeMap::new(),
-            kanata: Kanata::new(root_uri),
+            kanata: Kanata::new(),
+            config,
+            root: root_uri,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
         }
     }
@@ -184,6 +210,8 @@ impl KanataLanguageServer {
         log!(method);
 
         match method {
+            // Nothing to do when we receive the `Initialized` notification.
+            Initialized::METHOD => (),
             DidOpenTextDocument::METHOD => {
                 let DidOpenTextDocumentParams { text_document } = from_value(params).unwrap();
 
@@ -195,7 +223,9 @@ impl KanataLanguageServer {
                 let diagnostics = self.reload_diagnostics();
                 self.send_diagnostics(&diagnostics);
             }
-
+            // We don't care when a document is closed -- we care about all Kanata files in a
+            // workspace folder regardless of which ones remain open.
+            DidCloseTextDocument::METHOD => (),
             DidChangeTextDocument::METHOD => {
                 let params: DidChangeTextDocumentParams = from_value(params).unwrap();
 
@@ -271,11 +301,6 @@ impl KanataLanguageServer {
                 let diagnostics = self.reload_diagnostics();
                 self.send_diagnostics(&diagnostics);
             }
-            // We don't care when a document is closed -- we care about all Kanata files in a
-            // workspace folder regardless of which ones remain open.
-            DidCloseTextDocument::METHOD => (),
-            // Nothing to do when we receive the `Initialized` notification.
-            Initialized::METHOD => (),
 
             _ => log!("unexpected notification"),
         }
@@ -394,7 +419,7 @@ impl KanataLanguageServer {
         &self,
         diagnostic: &ParseError,
     ) -> anyhow::Result<Option<TextDocumentItem>> {
-        let url: Url = match &self.kanata.root_folder {
+        let url: Url = match &self.root {
             Some(root) => {
                 let filename = match diagnostic.span.clone().map(|x| x.file_name()) {
                     Some(f) => f,
@@ -492,10 +517,34 @@ impl KanataLanguageServer {
     }
 
     fn parse_documents(&self) -> Vec<ParseError> {
-        let result = self.kanata.parse(&self.main_cfg_file, &self.documents);
-        match result {
-            Ok(_) => vec![],
-            Err(e) => vec![e],
+        match self.config.includes_and_workspaces {
+            IncludesAndWorkspaces::Single => self.documents.iter().fold(
+                vec![],
+                |mut acc: Vec<ParseError>, doc: (&Url, &TextDocumentItem)| {
+                    let result = self.kanata.parse(
+                        &self.root,
+                        Either::Right(doc.0),
+                        &self.documents,
+                        self.config.includes_and_workspaces,
+                    );
+                    if let Err(e) = result {
+                        acc.push(e)
+                    };
+                    acc
+                },
+            ),
+            IncludesAndWorkspaces::Workspace => {
+                let result = self.kanata.parse(
+                    &self.root,
+                    Either::Left(&PathBuf::from(self.config.main_config_file.clone())),
+                    &self.documents,
+                    self.config.includes_and_workspaces,
+                );
+                match result {
+                    Ok(_) => vec![],
+                    Err(e) => vec![e],
+                }
+            }
         }
     }
 

@@ -15,7 +15,6 @@ const sendDiagnosticsCallback = (params: PublishDiagnosticsParams) =>
   connection.sendDiagnostics(params);
 
 connection.onInitialize((params: InitializeParams) => {
-  console.log('KanataLanguageServer: ', KanataLanguageServer);
   const kls = new KanataLanguageServer(params, sendDiagnosticsCallback);
 
   connection.onNotification((...args) => kls.onNotification(...args));

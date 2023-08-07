@@ -73,6 +73,14 @@ async function setClient(folder: WorkspaceFolder, ctx: ExtensionContext) {
     diagnosticCollectionName: extensionName,
     workspaceFolder: folder,
     outputChannel,
+    initializationOptions: {
+      mainConfigFile: workspace
+        .getConfiguration()
+        .get<string>('vscode-kanata.mainConfigFile', ''),
+      includesAndWorkspaces: workspace
+        .getConfiguration()
+        .get<string>('vscode-kanata.includesAndWorkspaces', ''),
+    },
   };
 
   // initializationOptions: {

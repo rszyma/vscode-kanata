@@ -32,6 +32,7 @@ web-sys = { version = "0.3.64", features = ["console"] }
 unicode-width = "0.1.10"
 rustc-hash = "1.1.0"
 anyhow = "1.0.72"
+serde_json = "1.0.104"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.26"

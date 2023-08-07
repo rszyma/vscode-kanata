@@ -27,7 +27,7 @@
   },
   "main": "./out/client.js",
   "activationEvents": [
-    "onStartupFinished"
+    "workspaceContains:**/*.kbd"
   ],
   "contributes": {
     "languages": [
@@ -53,7 +53,28 @@
     "configuration": {
       "type": "object",
       "title": "Kanata",
-      "properties": {}
+      "properties": {
+        "vscode-kanata.includesAndWorkspaces": {
+          "type": "string",
+          "enum": [
+            "single",
+            "workspace"
+          ],
+          "markdownEnumDescriptions": [
+            "Every kanata file in the workspace will be treated as main config file. `include` blocks can't be correctly analyzed if this option is selected.",
+            "Only a single, selected file (by default `kanata.kbd`) will be treated as main file. Other files will not be be analyzed for errors, unless the main file includes them. Selecting this option enables support for `include` blocks."
+          ],
+          "default": "single",
+          "markdownDescription": "Controls how to treat multiple kanata configuration files in one workspace."
+        },
+        "vscode-kanata.mainConfigFile": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-\\.]+$",
+          "patternErrorMessage": "Main config filename must be a file located in the workspace root",
+          "default": "kanata.kbd",
+          "markdownDescription": "Main config filename. This setting applies only if the `includesAndWorkspaces` is set to `workspace`"
+        }
+      }
     }
   },
   "scripts": {

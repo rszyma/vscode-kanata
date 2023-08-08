@@ -18,10 +18,10 @@ use lsp_types::{
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
 
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
+use kanata_parser::cfg::{FileContentProvider, ParseError};
 
 mod helpers;
-use helpers::*;
+use helpers::{parse_wrapper, CustomParseError, Diagnostics, Documents, Either};
 
 struct Kanata {}
 
@@ -39,7 +39,7 @@ impl Kanata {
         &self,
         main_cfg_filename: &Path, // will be used only as filename in spans.
         main_cfg_text: &str,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), CustomParseError> {
         let mut get_file_content_fn_impl = |_: &Path| {
             // Err(kanata_extension_error(vec![ // todo: change this text
             //         "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
@@ -53,16 +53,11 @@ impl Kanata {
             ))
         };
 
-        kanata_parser::cfg::parse_cfg_raw_string(
+        parse_wrapper(
             main_cfg_text,
-            &mut kanata_parser::cfg::ParsedState::default(),
             main_cfg_filename,
             &mut FileContentProvider::new(&mut get_file_content_fn_impl),
         )
-        .map(|_| {
-            // Ignoring the content of the parser result for now.
-            ()
-        })
     }
 
     fn parse_workspace(
@@ -70,7 +65,12 @@ impl Kanata {
         root_folder: &Url,
         main_cfg_file: Either<&Path, &Url>,
         all_documents: &Documents,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), CustomParseError> {
+        log!(
+            "kanata.parse_workspace for main_cfg_file={:?}",
+            main_cfg_file
+        );
+
         const INVALID_PATH_ERROR: &str = "The provided config file path is not valid";
 
         let mut loaded_files: HashSet<Url> = HashSet::default();
@@ -105,22 +105,20 @@ impl Kanata {
 
         let text = &file_content_provider
             .get_file_content(&cfg_file_name)
-            .map_err(|e| ParseError::new_without_span(e))?;
+            .map_err(|e| {
+                CustomParseError::from_parse_error(
+                    ParseError::new_without_span(e),
+                    cfg_file_name.to_string_lossy().to_string().as_str(),
+                )
+            })?;
 
-        kanata_parser::cfg::parse_cfg_raw_string(
-            text,
-            &mut kanata_parser::cfg::ParsedState::default(),
-            &cfg_file_name,
-            &mut file_content_provider,
-        )
-        .map(|_| {
-            // Ignoring the content of the parser result for now.
-            ()
-        })
+        parse_wrapper(text, &cfg_file_name, &mut file_content_provider)
     }
 }
 
 use serde::Deserialize;
+
+use crate::helpers::HashSet;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -413,16 +411,13 @@ impl KanataLanguageServer {
         );
     }
 
-    fn document_from_kanata_diagnostic_context(
+    fn document_from_kanata_parse_error(
         &self,
-        diagnostic: &ParseError,
+        err: &CustomParseError,
     ) -> anyhow::Result<Option<TextDocumentItem>> {
         let url: Url = match &self.root {
             Some(root) => {
-                let filename = match diagnostic.span.clone().map(|x| x.file_name()) {
-                    Some(f) => f,
-                    None => return Ok(None),
-                };
+                let filename = err.span.file_name();
                 Url::join(&root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
             None => match &self.documents.first_key_value() {
@@ -443,21 +438,17 @@ impl KanataLanguageServer {
                 "untracked doc: {:?}\nTracked: {:?}\nDiagnostic: {:?}",
                 url,
                 tracked_docs,
-                diagnostic
+                err
             );
             Err(anyhow!("untracked doc"))
         }
     }
 
     // Returns Range with UTF-16 column positions.
-    fn lsp_range_from_kanata_diagnostic_context(&self, diagnostic: &ParseError) -> Option<Range> {
-        let span = match &diagnostic.span {
-            Some(span) => span,
-            None => {
-                return None;
-            }
-        };
-        Some(Range {
+    // todo: move this to helper functions and set as From<CustomParseError> impl, because `self` is not used
+    fn lsp_range_from_kanata_parse_error(&self, err: &CustomParseError) -> Range {
+        let span = err.span.clone();
+        Range {
             start: lsp_types::Position::new(
                 span.start.line.try_into().unwrap(),
                 helpers::utf16_length(helpers::slice_rc_str(
@@ -478,17 +469,17 @@ impl KanataLanguageServer {
                 .try_into()
                 .unwrap(),
             ),
-        })
+        }
     }
 
     fn diagnostics_from_kanata_parse_error(
         &self,
-        err: &ParseError,
+        err: &CustomParseError,
     ) -> (Option<TextDocumentItem>, Diagnostic) {
         let (message, severity) = (&err.msg, DiagnosticSeverity::ERROR);
 
         let doc: Option<TextDocumentItem> = self
-            .document_from_kanata_diagnostic_context(&err)
+            .document_from_kanata_parse_error(&err)
             .unwrap_or_else(|e| {
                 log!(
                     "Error in `document_from_kanata_diagnostic_context`: {:?}",
@@ -497,9 +488,7 @@ impl KanataLanguageServer {
                 None
             });
 
-        let range = self
-            .lsp_range_from_kanata_diagnostic_context(&err)
-            .unwrap_or_else(lsp_types::Range::default);
+        let range = self.lsp_range_from_kanata_parse_error(&err);
 
         let diagnostic = Diagnostic {
             range,
@@ -511,7 +500,8 @@ impl KanataLanguageServer {
         (doc, diagnostic)
     }
 
-    fn parse_workspace(&self, main_config_file: &str) -> Vec<ParseError> {
+    fn parse_workspace(&self, main_config_file: &str) -> Vec<CustomParseError> {
+        log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
         let main_cfg_file = Either::Left(pb.as_path());
         let result = self
@@ -522,21 +512,14 @@ impl KanataLanguageServer {
                 &self.documents,
             )
             .map(|_| None)
-            .map_err(|mut e| {
-                if let ParseError { span: None, .. } = e {
-                    let mut span = Span::default();
-                    span.file_name = main_config_file.into();
-                    e.span = Some(span);
-                };
-                Some(e)
-            })
-            .iter() // i love rust
+            .map_err(|e| Some(e))
+            .iter()
             .filter_map(|x| x.to_owned())
             .collect::<Vec<_>>();
         result
     }
 
-    fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> Option<ParseError> {
+    fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> Option<CustomParseError> {
         let url_path_str = doc.uri.path();
         let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
             .expect("shoudn't error because it comes from Url");
@@ -544,14 +527,7 @@ impl KanataLanguageServer {
         self.kanata
             .parse_single_file(&main_cfg_filename, main_cfg_text)
             .map(|_| None)
-            .unwrap_or_else(|mut e| {
-                if let ParseError { span: None, .. } = e {
-                    let mut span = Span::default();
-                    span.file_name = url_path_str.into();
-                    e.span = Some(span);
-                };
-                Some(e)
-            })
+            .unwrap_or_else(|e| Some(e))
     }
 
     fn reload_and_send_diagnostics_for_documents(&mut self, docs: Vec<&TextDocumentItem>) {
@@ -578,9 +554,12 @@ impl KanataLanguageServer {
             .map(|e| self.diagnostics_from_kanata_parse_error(e))
             .collect::<Vec<_>>();
 
+        log!("new diags for files: {:?}", &new_diags.iter().map(|x| ));
+
         for (doc_or_not, diag) in new_diags {
             match doc_or_not {
                 Some(doc) => {
+                    log!("added diagnostic for document: {}", doc.uri.as_str());
                     let url: &Url = &doc.uri;
 
                     let mut diags = self.diagnostics.get(url).map(|x| x.to_owned()).unwrap_or(

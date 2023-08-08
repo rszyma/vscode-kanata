@@ -1,14 +1,10 @@
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
     str::{FromStr, Split},
 };
 
 use anyhow::{anyhow, bail};
-
-mod helpers;
-
-use helpers::*;
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
@@ -22,7 +18,10 @@ use lsp_types::{
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
 
-use kanata_parser::cfg::{FileContentProvider, ParseError};
+use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
+
+mod helpers;
+use helpers::*;
 
 struct Kanata {}
 
@@ -35,12 +34,42 @@ impl Kanata {
         Self {}
     }
 
-    fn parse(
+    /// Parses with includes disabled.
+    fn parse_single_file(
         &self,
-        root_folder: &Option<Url>, // is None if file is opened without workspace.
+        main_cfg_filename: &Path, // will be used only as filename in spans.
+        main_cfg_text: &str,
+    ) -> Result<(), ParseError> {
+        let mut get_file_content_fn_impl = |_: &Path| {
+            // Err(kanata_extension_error(vec![ // todo: change this text
+            //         "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
+            //         "If you want to enable `includes` support, you need to:",
+            //         "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
+            //         "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
+            //         "\t3. Change `Includes And Workspaces` to `workspace`",
+            //     ].join("\n")))
+            Err(kanata_extension_error(
+                "Includes can't be analyzed, because the support for it is disabled.",
+            ))
+        };
+
+        kanata_parser::cfg::parse_cfg_raw_string(
+            main_cfg_text,
+            &mut kanata_parser::cfg::ParsedState::default(),
+            main_cfg_filename,
+            &mut FileContentProvider::new(&mut get_file_content_fn_impl),
+        )
+        .map(|_| {
+            // Ignoring the content of the parser result for now.
+            ()
+        })
+    }
+
+    fn parse_workspace(
+        &self,
+        root_folder: &Option<Url>, // is None if file is opened without workspace. // todo: this shouldn't be an option
         main_cfg_file: Either<&Path, &Url>,
         all_documents: &Documents,
-        workspace_options: WorkspaceOptions,
     ) -> Result<(), ParseError> {
         const INVALID_PATH_ERROR: &str = "The provided config file path is not valid";
 
@@ -62,25 +91,14 @@ impl Kanata {
                 }
             };
 
-            let doc = match workspace_options {
-                WorkspaceOptions::Single => return Err(kanata_extension_error(vec![
-                    "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
-                    "If you want to enable `includes` support, you need to:",
-                    "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
-                    "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
-                    "\t3. Change `Includes And Workspaces` to `workspace`",
-                ].join("\n"))),
-                WorkspaceOptions::Workspace {..} => {
-                    log!("searching URL ({}) across opened documents", file_url);
-                    all_documents.get(&file_url).ok_or_else(|| {
-                        if root_folder.is_some() {
-                            kanata_extension_error("Can't open this file for analysis, because it doesn't exist, or it outside of opened workspace.")
-                        } else {
-                            kanata_extension_error("Included files can't be analyzed in non-workspace mode. Please reopen your config file in a workspace.")
-                        }
-                    })?
+            log!("searching URL ({}) across opened documents", file_url);
+            let doc = all_documents.get(&file_url).ok_or_else(|| {
+                if root_folder.is_some() {
+                    kanata_extension_error("Can't open this file for analysis, because it doesn't exist, or it outside of opened workspace.")
+                } else {
+                    kanata_extension_error("Included files can't be analyzed in non-workspace mode. Please reopen your config file in a workspace.")
                 }
-            };
+            })?;
 
             if !loaded_files.insert(file_url) {
                 return Err("The provided config file was already included before".to_string());
@@ -159,9 +177,6 @@ impl From<Config> for WorkspaceOptions {
         }
     }
 }
-
-pub(crate) type Documents = BTreeMap<Url, TextDocumentItem>;
-pub(crate) type Diagnostics = BTreeMap<Url, PublishDiagnosticsParams>;
 
 #[wasm_bindgen]
 pub struct KanataLanguageServer {
@@ -305,8 +320,8 @@ impl KanataLanguageServer {
 
                 for uri in deleted_uris {
                     log!("detected file deletion: {}", uri);
-                    let removedAnyKanataDoc = self.remove_tracked_documents_in_dir(&uri);
-                    if removedAnyKanataDoc {
+                    let any_kanata_doc_got_removed = self.remove_tracked_documents_in_dir(&uri);
+                    if any_kanata_doc_got_removed {
                         self.reload_and_send_diagnostics_for_all_documents();
                     }
                 }
@@ -338,7 +353,7 @@ impl KanataLanguageServer {
             // If this returns `None`, `uri` was already removed from the local set of tracked
             // documents. An easy way to encounter this is to right-click delete a Kanata file via
             // the VS Code UI, which races the `DidDeleteFiles` and `DidChangeWatchedFiles` events.
-            if let Some(removed) = self.remove_document(&uri) {
+            if let Some(_) = self.remove_document(&uri) {
                 self.reload_and_send_diagnostics_for_all_documents()
             } else {
                 log!("cannot delete untracked doc");
@@ -356,7 +371,7 @@ impl KanataLanguageServer {
     fn remove_document(&mut self, uri: &Url) -> Option<TextDocumentItem> {
         self.documents.remove(uri)
     }
-    /// Remove tracked docs inside `dir`. Returns true if any document was removed.
+    /// Remove tracked docs inside `dir`. Returns true if any tracked document was removed.
     fn remove_tracked_documents_in_dir(&mut self, dir: &Url) -> bool {
         // todo: what is even this abomination
         let (in_removed_dir, not_in_removed_dir): (Documents, Documents) =
@@ -368,11 +383,12 @@ impl KanataLanguageServer {
                 // If all path segments match b/w dir & uri, uri is in dir and should be removed.
                 maybe_segments.map_or(false, compare_paths)
             });
+        let tracked_doc_was_removed = !in_removed_dir.is_empty();
         for (url, _) in in_removed_dir {
             log!("tracked document got deleted: {}", url);
             self.remove_document(&url);
         }
-        !in_removed_dir.is_empty()
+        tracked_doc_was_removed
     }
 
     fn send_diagnostics(&self) {
@@ -427,7 +443,7 @@ impl KanataLanguageServer {
 
     // Returns Range with UTF-16 column positions.
     fn lsp_range_from_kanata_diagnostic_context(&self, diagnostic: &ParseError) -> Option<Range> {
-        let span = match diagnostic.span {
+        let span = match &diagnostic.span {
             Some(span) => span,
             None => {
                 return None;
@@ -459,7 +475,7 @@ impl KanataLanguageServer {
 
     fn diagnostics_from_kanata_parse_error(
         &self,
-        err: ParseError,
+        err: &ParseError,
     ) -> (Option<TextDocumentItem>, Diagnostic) {
         let (message, severity) = (&err.msg, DiagnosticSeverity::ERROR);
 
@@ -487,55 +503,80 @@ impl KanataLanguageServer {
         (doc, diagnostic)
     }
 
-    // Currently max 1 ParseError can be returned from parsing operation.
-    fn parse_documents(&self, main_cfg_file: Either<&Path, &Url>) -> Option<ParseError> {
-        let result = self.kanata.parse(
-            &self.root,
-            main_cfg_file,
-            &self.documents,
-            self.workspace_options,
-        );
-        match result {
-            Ok(_) => None,
-            Err(e) => Some(e),
-        }
-    }
-
     fn reload_and_send_diagnostics_for_all_documents(&mut self) {
         self.clear_diagnostics_for_all_documents();
 
-        for entrypoint_doc_url in self.documents.keys() {
-            let main_cfg_file = match self.workspace_options {
-                WorkspaceOptions::Single => Either::Right(entrypoint_doc_url),
-                WorkspaceOptions::Workspace { main_config_file } => {
-                    Either::Left(PathBuf::from(main_config_file.clone()).as_path())
-                }
-            };
+        // todo: files not opened in workspace should be handled separately.
 
-            let new_diags = match self.parse_documents(main_cfg_file) {
-                Some(err) => vec![self.diagnostics_from_kanata_parse_error(err)],
+        let parse_errors: Vec<ParseError> = match &self.workspace_options {
+            WorkspaceOptions::Single => {
+                let results: Vec<_> = self
+                    .documents
+                    .iter()
+                    .filter_map(|(u, doc)| {
+                        let url_path_str = u.path();
+                        let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
+                            .expect("shoudn't error because it comes from Url");
+                        let main_cfg_text: &str = &doc.text;
+                        self.kanata
+                            .parse_single_file(&main_cfg_filename, main_cfg_text)
+                            .map(|_| None)
+                            .unwrap_or_else(|mut e| {
+                                if let ParseError { span: None, .. } = e {
+                                    let mut span = Span::default();
+                                    span.file_name = url_path_str.into();
+                                    e.span = Some(span);
+                                };
+                                Some(e)
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                results
+            }
+            WorkspaceOptions::Workspace { main_config_file } => {
+                let pb = PathBuf::from(main_config_file.clone());
+                let main_cfg_file = Either::Left(pb.as_path());
+                let result = self
+                    .kanata
+                    .parse_workspace(&self.root, main_cfg_file, &self.documents)
+                    .map(|_| None)
+                    .map_err(|mut e| {
+                        if let ParseError { span: None, .. } = e {
+                            let mut span = Span::default();
+                            span.file_name = main_config_file.as_str().into();
+                            e.span = Some(span);
+                        };
+                        Some(e)
+                    })
+                    .iter() // i love rust
+                    .filter_map(|x| x.to_owned())
+                    .collect::<Vec<_>>();
+                result
+            }
+        };
+
+        let new_diags = parse_errors
+            .iter()
+            .map(|e| self.diagnostics_from_kanata_parse_error(e))
+            .collect::<Vec<_>>();
+
+        for (doc_or_not, diag) in new_diags {
+            match doc_or_not {
+                Some(doc) => {
+                    let url: &Url = &doc.uri;
+
+                    let mut diags = self.diagnostics.get(url).map(|x| x.to_owned()).unwrap_or(
+                        PublishDiagnosticsParams::new(url.to_owned(), vec![], Some(doc.version)),
+                    );
+
+                    diags.diagnostics.push(diag.clone());
+                    self.diagnostics.insert(url.to_owned(), diags.to_owned());
+                }
                 None => {
-                    // all good, no parse errors!
-                    vec![]
+                    // This shouldn't happen, as earlier we've made sure that spans
+                    // without assigned file have instead assigned main file as fallback .
+                    log!("skipped diagnostic not bound to any document: {:?}", diag);
                 }
-            };
-
-            for (doc, diag) in new_diags {
-                let url: &Url = match doc {
-                    Some(d) => main_cfg_file,
-                    None => entrypoint_doc_url,
-                };
-
-                let diags =
-                    self.diagnostics
-                        .get_mut(url)
-                        .unwrap_or(&mut PublishDiagnosticsParams::new(
-                            url.to_owned(),
-                            vec![],
-                            Some(doc.version),
-                        ));
-                diags.diagnostics.push(diag);
-                self.diagnostics.insert(url.to_owned(), diags);
             }
         }
 

@@ -1,11 +1,14 @@
 // use std::collections::{BTreeMap, HashSet};
 
-use std::rc::Rc;
+use std::{collections::BTreeMap, rc::Rc};
 
-use lsp_types::{PublishDiagnosticsParams, TextDocumentItem};
+use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
 // type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
+
+pub type Documents = BTreeMap<Url, TextDocumentItem>;
+pub type Diagnostics = BTreeMap<Url, PublishDiagnosticsParams>;
 
 #[macro_export]
 macro_rules! log {
@@ -15,10 +18,6 @@ macro_rules! log {
     ($($tokens:tt)*) => {
         web_sys::console::log_1(&JsValue::from(format!($($tokens)*)))
     };
-}
-
-pub(crate) fn empty_diagnostics_for_doc(doc: &TextDocumentItem) -> PublishDiagnosticsParams {
-    PublishDiagnosticsParams::new(doc.uri, vec![], Some(doc.version))
 }
 
 pub fn utf16_length(str: impl AsRef<str>) -> usize {
@@ -34,20 +33,3 @@ pub enum Either<A, B> {
     Left(A),
     Right(B),
 }
-
-// pub fn path_to_url() {
-//     let file_url = if filepath.is_absolute() {
-//         Url::from_str(format!("file://{}", filepath.to_string_lossy()).as_ref())
-//             .map_err(|_| INVALID_PATH_ERROR.to_string())?
-//     } else {
-//         match root_folder {
-//             Some(root) => {
-//                 Url::join(&root, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
-//             }
-//             None => match all_documents.first_key_value() {
-//                 Some(entry) => entry.0.to_owned(),
-//                 None => return Err("No kanata files are opened".to_string()),
-//             },
-//         }
-//     };
-// }

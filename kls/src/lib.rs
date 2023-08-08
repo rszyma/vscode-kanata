@@ -67,7 +67,7 @@ impl Kanata {
 
     fn parse_workspace(
         &self,
-        root_folder: &Option<Url>, // is None if file is opened without workspace. // todo: this shouldn't be an option
+        root_folder: &Url,
         main_cfg_file: Either<&Path, &Url>,
         all_documents: &Documents,
     ) -> Result<(), ParseError> {
@@ -80,24 +80,12 @@ impl Kanata {
                 Url::from_str(format!("file://{}", filepath.to_string_lossy()).as_ref())
                     .map_err(|_| INVALID_PATH_ERROR.to_string())?
             } else {
-                match root_folder {
-                    Some(root) => {
-                        Url::join(&root, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
-                    }
-                    None => match all_documents.first_key_value() {
-                        Some(entry) => entry.0.to_owned(),
-                        None => return Err("No kanata files are opened".to_string()),
-                    },
-                }
+                Url::join(&root_folder, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
             };
 
-            log!("searching URL ({}) across opened documents", file_url);
+            log!("searching URL across opened documents: {}", file_url);
             let doc = all_documents.get(&file_url).ok_or_else(|| {
-                if root_folder.is_some() {
-                    kanata_extension_error("Can't open this file for analysis, because it doesn't exist, or it outside of opened workspace.")
-                } else {
-                    kanata_extension_error("Included files can't be analyzed in non-workspace mode. Please reopen your config file in a workspace.")
-                }
+                kanata_extension_error("Can't open this file for analysis, because it doesn't exist, or is outside of opened workspace.")
             })?;
 
             if !loaded_files.insert(file_url) {
@@ -109,21 +97,10 @@ impl Kanata {
 
         let mut file_content_provider = FileContentProvider::new(&mut get_file_content_fn_impl);
 
-        let cfg_file_name: PathBuf = match root_folder {
-            Some(_root) => match main_cfg_file {
-                // guaranted to be a single-segment path (just filename).
-                Either::Left(path) => path.to_owned(),
-                // this always is absolute path.
-                Either::Right(url) => PathBuf::from(url.path()),
-            },
-            // this is going to return an absolute path.
-            None => {
-                let url = all_documents
-                    .first_key_value()
-                    .expect("should be validated before")
-                    .0;
-                PathBuf::from(url.path())
-            }
+        let cfg_file_name: PathBuf = match main_cfg_file {
+            Either::Left(path) => path.to_owned(),
+            // this always is absolute path.
+            Either::Right(url) => PathBuf::from(url.path()),
         };
 
         let text = &file_content_provider
@@ -402,7 +379,19 @@ impl KanataLanguageServer {
     }
 
     fn clear_diagnostics_for_all_documents(&mut self) {
-        self.diagnostics.clear();
+        // self.diagnostics.clear();
+        self.diagnostics.extend(
+            self.documents
+                .iter()
+                .map(|(uri, doc)| {
+                    let params =
+                        PublishDiagnosticsParams::new(uri.clone(), vec![], Some(doc.version));
+                    (uri.clone(), params)
+                })
+                .collect::<BTreeMap<Url, PublishDiagnosticsParams>>(),
+        );
+        // self.send_diagnostics();
+        log!("cleared all diagnostics");
     }
 
     fn document_from_kanata_diagnostic_context(
@@ -538,7 +527,11 @@ impl KanataLanguageServer {
                 let main_cfg_file = Either::Left(pb.as_path());
                 let result = self
                     .kanata
-                    .parse_workspace(&self.root, main_cfg_file, &self.documents)
+                    .parse_workspace(
+                        &self.root.clone().expect("should be set for workspace mode"),
+                        main_cfg_file,
+                        &self.documents,
+                    )
                     .map(|_| None)
                     .map_err(|mut e| {
                         if let ParseError { span: None, .. } = e {

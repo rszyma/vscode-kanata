@@ -2,9 +2,12 @@ use std::{
     collections::BTreeMap,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
+    sync,
 };
 
 use anyhow::{anyhow, bail};
+use debounce::EventDebouncer;
+use instant::Instant;
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
@@ -21,7 +24,9 @@ use wasm_bindgen::prelude::*;
 use kanata_parser::cfg::{FileContentProvider, ParseError};
 
 mod helpers;
-use helpers::{parse_wrapper, CustomParseError, Diagnostics, Documents, Either};
+use helpers::{
+    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents, Either,
+};
 
 struct Kanata {}
 
@@ -156,11 +161,12 @@ impl From<Config> for WorkspaceOptions {
 #[wasm_bindgen]
 pub struct KanataLanguageServer {
     documents: Documents,
-    diagnostics: Diagnostics,
     kanata: Kanata,
     workspace_options: WorkspaceOptions,
     root: Option<Url>,
+    reload_diagnostics_debouncer: Option<EventDebouncer<()>>,
     send_diagnostics_callback: js_sys::Function,
+    mutex: sync::Mutex<()>,
 }
 
 /// Public API exposed via WASM.
@@ -195,12 +201,19 @@ impl KanataLanguageServer {
 
         Self {
             documents: BTreeMap::new(),
-            diagnostics: BTreeMap::new(),
             kanata: Kanata::new(),
             workspace_options: config.into(),
             root: root_uri,
+            reload_diagnostics_debouncer: None,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
+            mutex: std::sync::Mutex::new(()),
         }
+
+        // self_.reload_diagnostics_debouncer =
+        //     Some(EventDebouncer::new(Duration::from_millis(200), move |_| {
+        //         self_._reload_and_send_diagnostics_for_all_documents();
+        //     }));
+        // self_
     }
 
     /// Catch-all handler for notifications sent by the LSP client.
@@ -223,7 +236,8 @@ impl KanataLanguageServer {
                     log!("reopened tracked doc");
                 }
 
-                self.reload_and_send_diagnostics_for_documents(vec![&text_document]);
+                let diagnostics = self.get_diagnostics();
+                self.send_diagnostics(&diagnostics);
             }
             // We don't care when a document is closed -- we care about all Kanata files in a
             // workspace folder regardless of which ones remain open.
@@ -298,22 +312,16 @@ impl KanataLanguageServer {
                     log!("detected file deletion: {}", uri);
                     let removed_docs = self.remove_tracked_documents_in_dir(&uri);
                     if !removed_docs.is_empty() {
-                        self.reload_and_send_diagnostics_for_documents(
-                            removed_docs.iter().collect(),
-                        );
+                        let diagnostics = self.get_diagnostics();
+                        self.send_diagnostics(&diagnostics);
                     }
                 }
             }
 
             DidSaveTextDocument::METHOD => {
                 let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
-                let docs = self
-                    .documents
-                    .iter()
-                    .map(|(_, doc)| doc.to_owned())
-                    .collect::<Vec<_>>();
-                let borrowed_docs = docs.iter().collect(); // ugly but works
-                self.reload_and_send_diagnostics_for_documents(borrowed_docs);
+                let diagnostics = self.get_diagnostics();
+                self.send_diagnostics(&diagnostics);
             }
 
             _ => log!("unexpected notification"),
@@ -338,7 +346,8 @@ impl KanataLanguageServer {
             // documents. An easy way to encounter this is to right-click delete a Kanata file via
             // the VS Code UI, which races the `DidDeleteFiles` and `DidChangeWatchedFiles` events.
             if let Some(doc) = self.remove_document(&uri) {
-                self.reload_and_send_diagnostics_for_documents(vec![&doc]);
+                let diagnostics = self.get_diagnostics();
+                self.send_diagnostics(&diagnostics);
             } else {
                 log!("cannot delete untracked doc");
             }
@@ -377,38 +386,15 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    fn send_diagnostics(&self) {
-        log!("sending diagnostics for {} files", self.diagnostics.len());
+    fn send_diagnostics(&self, diagnostics: &Diagnostics) {
+        log!("sending diagnostics for {} files", diagnostics.len());
         let this = &JsValue::null();
-        for params in self.diagnostics.values() {
+        for params in diagnostics.values() {
             let params = &to_value(&params).unwrap();
             if let Err(e) = self.send_diagnostics_callback.call1(this, params) {
                 log!("send_diagnostics params:\n{:?}\nJS error: {:?}", params, e);
             }
         }
-    }
-
-    // Vec<(&Url, &TextDocumentItem)>
-    fn clear_diagnostics_for_documents(&mut self, docs: Vec<&TextDocumentItem>) {
-        // self.diagnostics.clear();
-        self.diagnostics.extend(
-            docs.iter()
-                .map(|doc| {
-                    let params = PublishDiagnosticsParams::new(
-                        doc.uri.clone().clone(),
-                        vec![],
-                        Some(doc.version),
-                    );
-                    (doc.uri.clone().clone(), params)
-                })
-                .collect::<BTreeMap<Url, PublishDiagnosticsParams>>(),
-        );
-        // self.send_diagnostics();
-        let docs_urls: Vec<_> = docs.into_iter().map(|doc| doc.uri.as_str()).collect();
-        log!(
-            "cleared diagnostics for the following documents: {:?}",
-            &docs_urls
-        );
     }
 
     fn document_from_kanata_parse_error(
@@ -428,47 +414,19 @@ impl KanataLanguageServer {
         if let Some(document) = self.documents.get(&url) {
             Ok(Some(document.clone()))
         } else {
-            let tracked_docs = self
+            let tracked_docs_str = self
                 .documents
                 .keys()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
             log!(
-                "untracked doc: {:?}\nTracked: {:?}\nDiagnostic: {:?}",
-                url,
-                tracked_docs,
+                "untracked doc: {}\nTracked: {:?}\nDiagnostic: {:?}",
+                url.to_string(),
+                tracked_docs_str,
                 err
             );
             Err(anyhow!("untracked doc"))
-        }
-    }
-
-    // Returns Range with UTF-16 column positions.
-    // todo: move this to helper functions and set as From<CustomParseError> impl, because `self` is not used
-    fn lsp_range_from_kanata_parse_error(&self, err: &CustomParseError) -> Range {
-        let span = err.span.clone();
-        Range {
-            start: lsp_types::Position::new(
-                span.start.line.try_into().unwrap(),
-                helpers::utf16_length(helpers::slice_rc_str(
-                    &span.file_content,
-                    span.start.line_beginning,
-                    span.start.absolute,
-                ))
-                .try_into()
-                .unwrap(),
-            ),
-            end: lsp_types::Position::new(
-                span.end.line.try_into().unwrap(),
-                helpers::utf16_length(helpers::slice_rc_str(
-                    &span.file_content,
-                    span.end.line_beginning,
-                    span.end.absolute,
-                ))
-                .try_into()
-                .unwrap(),
-            ),
         }
     }
 
@@ -488,10 +446,8 @@ impl KanataLanguageServer {
                 None
             });
 
-        let range = self.lsp_range_from_kanata_parse_error(&err);
-
         let diagnostic = Diagnostic {
-            range,
+            range: err.into(),
             severity: Some(severity),
             source: Some("vscode-kanata".to_owned()),
             message: message.clone(),
@@ -504,19 +460,18 @@ impl KanataLanguageServer {
         log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
         let main_cfg_file = Either::Left(pb.as_path());
-        let result = self
+        let parse_result = self
             .kanata
             .parse_workspace(
-                &self.root.clone().expect("should be set for workspace mode"),
+                &self.root.clone().expect("should be set in workspace mode"),
                 main_cfg_file,
                 &self.documents,
             )
             .map(|_| None)
-            .map_err(|e| Some(e))
-            .iter()
-            .filter_map(|x| x.to_owned())
+            .unwrap_or_else(|e| Some(e))
+            .into_iter()
             .collect::<Vec<_>>();
-        result
+        parse_result
     }
 
     fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> Option<CustomParseError> {
@@ -530,10 +485,42 @@ impl KanataLanguageServer {
             .unwrap_or_else(|e| Some(e))
     }
 
-    fn reload_and_send_diagnostics_for_documents(&mut self, docs: Vec<&TextDocumentItem>) {
-        self.clear_diagnostics_for_documents(docs.clone());
+    /// Returns empty diagnostics for all tracked docs.
+    /// Note, that when publishing diagnostics, if a document is omitted,
+    /// its diagnostics won't be cleared. If we want to clear diagnostics
+    /// for that document, we need to set an empty array for that that doc.
+    fn empty_diagnostics_for_all_documents(&self) -> Diagnostics {
+        self.documents
+            .iter()
+            .map(empty_diagnostics_for_doc)
+            .collect()
+    }
+
+    // fn reload_and_send_diagnostics_for_all_documents(&self) {
+    // let wait_lock_start = Instant::now();
+    // let get_diagnostics_start = Instant::now();
+    // let _guard = self.mutex.lock().unwrap();
+    // log!("lock wait finished in in {:?}", wait_lock_start.elapsed());
+    //     let documents = self.get_diagnostics.unwrap().put(());
+    //     self.send_diagnostics(documents);
+    // log!(
+    //     "get_diagnostics finished in in {:?}",
+    //     get_diagnostics_start.elapsed()
+    // );
+    // }
+
+    /// Gets up-to-date diagnostics from kanata-parser.
+    /// All previously set diagnostics will be cleared.
+    fn get_diagnostics(&self) -> Diagnostics {
+        let docs = self
+            .documents
+            .iter()
+            .map(|(_, doc)| doc.to_owned())
+            .collect::<Vec<_>>();
+        let docs: Vec<_> = docs.iter().collect();
 
         // todo: files not opened in workspace should be handled separately.
+        // maybe do: if len(docs) == 1 then parse_a_single_file_in_workspace
 
         let parse_errors = match &self.workspace_options {
             WorkspaceOptions::Single => {
@@ -552,31 +539,34 @@ impl KanataLanguageServer {
         let new_diags = parse_errors
             .iter()
             .map(|e| self.diagnostics_from_kanata_parse_error(e))
-            .collect::<Vec<_>>();
+            .fold(Diagnostics::new(), |mut acc, (doc_or_not, diag)| {
+                match doc_or_not {
+                    Some(doc) => {
+                        log!("added diagnostic for document: {}", doc.uri.as_str());
+                        let url: &Url = &doc.uri;
 
-        log!("new diags for files: {:?}", &new_diags.iter().map(|x| ));
+                        let mut diags = acc.get(url).map(|x| x.to_owned()).unwrap_or(
+                            PublishDiagnosticsParams::new(
+                                url.to_owned(),
+                                vec![],
+                                Some(doc.version),
+                            ),
+                        );
 
-        for (doc_or_not, diag) in new_diags {
-            match doc_or_not {
-                Some(doc) => {
-                    log!("added diagnostic for document: {}", doc.uri.as_str());
-                    let url: &Url = &doc.uri;
+                        diags.diagnostics.push(diag.clone());
+                        acc.insert(url.to_owned(), diags.to_owned());
+                    }
+                    None => {
+                        // This shouldn't happen, as earlier we've made sure that spans
+                        // without assigned file have instead assigned main file as fallback .
+                        log!("skipped diagnostic not bound to any document: {:?}", diag);
+                    }
+                };
+                acc
+            });
 
-                    let mut diags = self.diagnostics.get(url).map(|x| x.to_owned()).unwrap_or(
-                        PublishDiagnosticsParams::new(url.to_owned(), vec![], Some(doc.version)),
-                    );
-
-                    diags.diagnostics.push(diag.clone());
-                    self.diagnostics.insert(url.to_owned(), diags.to_owned());
-                }
-                None => {
-                    // This shouldn't happen, as earlier we've made sure that spans
-                    // without assigned file have instead assigned main file as fallback .
-                    log!("skipped diagnostic not bound to any document: {:?}", diag);
-                }
-            }
-        }
-
-        self.send_diagnostics();
+        let mut diagnostics = self.empty_diagnostics_for_all_documents();
+        diagnostics.extend(new_diags);
+        diagnostics
     }
 }

@@ -23,6 +23,13 @@ macro_rules! log {
     };
 }
 
+pub(crate) fn empty_diagnostics_for_doc(
+    (uri, doc): (&Url, &TextDocumentItem),
+) -> (Url, PublishDiagnosticsParams) {
+    let params = PublishDiagnosticsParams::new(uri.clone(), vec![], Some(doc.version));
+    (uri.clone(), params)
+}
+
 pub fn utf16_length(str: impl AsRef<str>) -> usize {
     let utf16_encoded: Vec<u16> = str.as_ref().encode_utf16().collect();
     utf16_encoded.len()
@@ -55,6 +62,33 @@ impl CustomParseError {
                 span.file_name = main_cfg_file.into();
                 span
             }),
+        }
+    }
+}
+
+impl Into<lsp_types::Range> for &CustomParseError {
+    fn into(self) -> lsp_types::Range {
+        lsp_types::Range {
+            start: lsp_types::Position::new(
+                self.span.start.line.try_into().unwrap(),
+                utf16_length(slice_rc_str(
+                    &self.span.file_content,
+                    self.span.start.line_beginning,
+                    self.span.start.absolute,
+                ))
+                .try_into()
+                .unwrap(),
+            ),
+            end: lsp_types::Position::new(
+                self.span.end.line.try_into().unwrap(),
+                utf16_length(slice_rc_str(
+                    &self.span.file_content,
+                    self.span.end.line_beginning,
+                    self.span.end.absolute,
+                ))
+                .try_into()
+                .unwrap(),
+            ),
         }
     }
 }

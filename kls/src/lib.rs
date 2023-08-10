@@ -44,18 +44,24 @@ impl Kanata {
         &self,
         main_cfg_filename: &Path, // will be used only as filename in spans.
         main_cfg_text: &str,
+        // Indicates whether the file is actually opened in VS Code workspace or, not.
+        // regardles of what is WorkspaceOptions config option set to.
+        is_opened_in_workspace: bool,
     ) -> Result<(), CustomParseError> {
         let mut get_file_content_fn_impl = |_: &Path| {
-            // Err(kanata_extension_error(vec![ // todo: change this text
-            //         "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
-            //         "If you want to enable `includes` support, you need to:",
-            //         "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
-            //         "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
-            //         "\t3. Change `Includes And Workspaces` to `workspace`",
-            //     ].join("\n")))
-            Err(kanata_extension_error(
-                "Includes can't be analyzed, because the support for it is disabled.",
-            ))
+            if is_opened_in_workspace {
+                Err(kanata_extension_error(vec![
+                    "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
+                    "If you want to enable `includes` support, you need to:",
+                    "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
+                    "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
+                    "\t3. Change `Includes And Workspaces` to `workspace`",
+                ].join("\n")))
+            } else {
+                Err(kanata_extension_error(
+                    "Includes can't be analyzed, because the current file is not opened in a workspace. Please, open the containing folder (File > Open Folder).",
+                ))
+            }
         };
 
         parse_wrapper(
@@ -182,22 +188,27 @@ impl KanataLanguageServer {
             ..
         } = from_value(initialize_params).unwrap();
 
-        let config: Config =
+        let mut config: Config =
             serde_json::from_str(initialization_options.unwrap().to_string().as_str()).unwrap();
 
         log!("{:?}", &config);
 
-        if let Some(url) = &mut root_uri {
-            // Ensure the path ends with a slash
-            if !url.path().ends_with('/') {
-                url.path_segments_mut()
-                    .expect("Invalid path")
-                    .pop_if_empty()
-                    .push("");
+        match &mut root_uri {
+            Some(url) => {
+                log!("workspace root: {}", url.as_ref().to_string());
+                // Ensure the path ends with a slash
+                if !url.path().ends_with('/') {
+                    url.path_segments_mut()
+                        .expect("Invalid path")
+                        .pop_if_empty()
+                        .push("");
+                }
             }
-        }
-
-        log!("root: {:?}", root_uri.as_ref().map(|url| url.to_string()));
+            None => {
+                log!("workspace root is not set, forcing `WorkspaceOptions::Single`.");
+                config.includes_and_workspaces = IncludesAndWorkspaces::Single;
+            }
+        };
 
         Self {
             documents: BTreeMap::new(),
@@ -479,8 +490,9 @@ impl KanataLanguageServer {
         let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
             .expect("shoudn't error because it comes from Url");
         let main_cfg_text: &str = &doc.text;
+        let is_opened_in_workspace: bool = self.root.is_some();
         self.kanata
-            .parse_single_file(&main_cfg_filename, main_cfg_text)
+            .parse_single_file(&main_cfg_filename, main_cfg_text, is_opened_in_workspace)
             .map(|_| None)
             .unwrap_or_else(|e| Some(e))
     }

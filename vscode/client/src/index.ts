@@ -11,6 +11,7 @@ import {
   WorkspaceFolder,
   Disposable,
   ConfigurationChangeEvent,
+  FileSystemWatcher,
 } from 'vscode';
 import {
   LanguageClient,
@@ -81,29 +82,31 @@ class Extension implements Disposable {
   async startClient(root: WorkspaceFolder | undefined) {
     const serverModulePath = this.ctx.asAbsolutePath(join('out', 'server.js'));
 
-    if (root === undefined) {
-      outputChannel.appendLine(
-        'single files opened in non-workspace are currently not supported'
+    let deleteWatcher: FileSystemWatcher | undefined = undefined;
+    let changeWatcher: FileSystemWatcher | undefined = undefined;
+
+    if (root !== undefined) {
+      deleteWatcher = workspace.createFileSystemWatcher(
+        kanataFilesInFolderPattern(root.uri),
+        true, // ignoreCreateEvents
+        true, // ignoreChangeEvents
+        false // ignoreDeleteEvents
       );
-      return;
+      changeWatcher = workspace.createFileSystemWatcher(
+        kanataFilesInFolderPattern(root.uri),
+        false, // ignoreCreateEvents
+        false, // ignoreChangeEvents
+        true // ignoreDeleteEvents
+      );
+
+      // Clean up watchers when extension is deactivated.
+      this.toDisposeOnRestart.push(deleteWatcher);
+      this.toDisposeOnRestart.push(changeWatcher);
+      // [didOpen]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidOpenTextDocument
+      this.toDisposeOnRestart.push(changeWatcher.onDidCreate(openDocument));
+      // [didChange]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidChangeTextDocument
+      this.toDisposeOnRestart.push(changeWatcher.onDidChange(openDocument));
     }
-
-    const deleteWatcher = workspace.createFileSystemWatcher(
-      kanataFilesInFolderPattern(root.uri),
-      true, // ignoreCreateEvents
-      true, // ignoreChangeEvents
-      false // ignoreDeleteEvents
-    );
-    const changeWatcher = workspace.createFileSystemWatcher(
-      kanataFilesInFolderPattern(root.uri),
-      false, // ignoreCreateEvents
-      false, // ignoreChangeEvents
-      true // ignoreDeleteEvents
-    );
-
-    // Clean up watchers when extension is deactivated.
-    this.toDisposeOnRestart.push(deleteWatcher);
-    this.toDisposeOnRestart.push(changeWatcher);
 
     const serverOpts = {
       module: serverModulePath,
@@ -111,7 +114,7 @@ class Extension implements Disposable {
     };
     const clientOpts: LanguageClientOptions = {
       documentSelector: [
-        { language: 'kanata', pattern: `${root.uri.fsPath}/**/*.kbd` },
+        { scheme: 'file', language: 'kanata', pattern: '**/*.kbd' },
       ],
       synchronize: { fileEvents: deleteWatcher },
       diagnosticCollectionName: extensionName,
@@ -133,12 +136,12 @@ class Extension implements Disposable {
 
     this.toDisposeOnRestart.push(this.client);
 
-    // [didOpen]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidOpenTextDocument
-    // [didChange]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidChangeTextDocument
-    this.toDisposeOnRestart.push(changeWatcher.onDidCreate(openDocument));
-    this.toDisposeOnRestart.push(changeWatcher.onDidChange(openDocument));
-
-    await openKanataFilesInFolder(root.uri);
+    if (root !== undefined) {
+      await openKanataFilesInFolder(root.uri);
+    } else {
+      // When file is opened in non-workspace mode, vscode will automatically
+      // call textDocument/didOpen, so no need to do anything here.
+    }
   }
 
   restart() {

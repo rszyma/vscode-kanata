@@ -38,15 +38,18 @@ export async function deactivate(): Promise<void> {
 
 class Extension implements Disposable {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly toDisposeOnReload: { dispose(): any }[];
+  toDisposeOnRestart: { dispose(): any }[];
   ctx: ExtensionContext;
   client: LanguageClient | undefined;
   settingMonitor: SettingMonitor | undefined;
 
   constructor(ctx: ExtensionContext) {
-    this.toDisposeOnReload = [];
+    this.toDisposeOnRestart = [];
     this.ctx = ctx;
-    // this.settingMonitor = new SettingMonitor(this.client, 'vscode-kanata');
+
+    this.ctx.subscriptions.push(
+      workspace.onDidChangeConfiguration(this.restart())
+    );
   }
 
   async start() {
@@ -61,11 +64,11 @@ class Extension implements Disposable {
       root = openedWorkspaces.at(0);
     }
 
-    await this.startClient(root);
-
-    this.ctx.subscriptions.push(
-      workspace.onDidChangeConfiguration(this.restart())
+    outputChannel.appendLine(
+      `starting with ${openedWorkspaces?.length || 0} opened workspaces`
     );
+
+    await this.startClient(root);
   }
 
   async stop() {
@@ -76,10 +79,10 @@ class Extension implements Disposable {
   }
 
   async startClient(root: WorkspaceFolder | undefined) {
-    const server = this.ctx.asAbsolutePath(join('out', 'server.js'));
+    const serverModulePath = this.ctx.asAbsolutePath(join('out', 'server.js'));
 
     if (root === undefined) {
-      console.log(
+      outputChannel.appendLine(
         'single files opened in non-workspace are currently not supported'
       );
       return;
@@ -99,10 +102,13 @@ class Extension implements Disposable {
     );
 
     // Clean up watchers when extension is deactivated.
-    this.toDisposeOnReload.push(deleteWatcher);
-    this.toDisposeOnReload.push(changeWatcher);
+    this.toDisposeOnRestart.push(deleteWatcher);
+    this.toDisposeOnRestart.push(changeWatcher);
 
-    const serverOpts = { module: server, transport: TransportKind.ipc };
+    const serverOpts = {
+      module: serverModulePath,
+      transport: TransportKind.ipc,
+    };
     const clientOpts: LanguageClientOptions = {
       documentSelector: [
         { language: 'kanata', pattern: `${root.uri.fsPath}/**/*.kbd` },
@@ -123,15 +129,14 @@ class Extension implements Disposable {
 
     this.client = new LanguageClient(extensionName, serverOpts, clientOpts);
 
-    // Start client and mark it for cleanup when the extension is deactivated.
     await this.client.start();
 
-    this.toDisposeOnReload.push(this.client);
+    this.toDisposeOnRestart.push(this.client);
 
     // [didOpen]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidOpenTextDocument
     // [didChange]: https://code.visualstudio.com/api/references/vscode-api#workspace.onDidChangeTextDocument
-    this.toDisposeOnReload.push(changeWatcher.onDidCreate(openDocument));
-    this.toDisposeOnReload.push(changeWatcher.onDidChange(openDocument));
+    this.toDisposeOnRestart.push(changeWatcher.onDidCreate(openDocument));
+    this.toDisposeOnRestart.push(changeWatcher.onDidChange(openDocument));
 
     await openKanataFilesInFolder(root.uri);
   }
@@ -139,18 +144,21 @@ class Extension implements Disposable {
   restart() {
     return async (e: ConfigurationChangeEvent) => {
       if (e.affectsConfiguration('vscode-kanata')) {
-        console.log('vscode-kanata configuration has changed!');
+        outputChannel.appendLine('vscode-kanata configuration has changed!');
         await this.stop();
-        // todo: reload configuration?
+        this.dispose();
+        outputChannel.clear();
         await this.start();
       } else {
-        console.log('vscode-kanata configuration has NOT changed');
+        outputChannel.appendLine(
+          "Settings changed but vscode-kanata configuration hasn't changed"
+        );
       }
     };
   }
 
   dispose() {
-    this.toDisposeOnReload.forEach(disposable => {
+    this.toDisposeOnRestart.forEach(disposable => {
       disposable.dispose();
     });
   }

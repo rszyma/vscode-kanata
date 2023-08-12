@@ -2,12 +2,9 @@ use std::{
     collections::BTreeMap,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
-    sync,
 };
 
 use anyhow::{anyhow, bail};
-use debounce::EventDebouncer;
-use instant::Instant;
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
@@ -15,7 +12,7 @@ use lsp_types::{
     },
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams, Range,
+    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams,
     TextDocumentItem, Url, VersionedTextDocumentIdentifier,
 };
 use serde_wasm_bindgen::{from_value, to_value};
@@ -24,9 +21,7 @@ use wasm_bindgen::prelude::*;
 use kanata_parser::cfg::{FileContentProvider, ParseError};
 
 mod helpers;
-use helpers::{
-    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents, Either,
-};
+use helpers::{empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents};
 
 struct Kanata {}
 
@@ -74,7 +69,7 @@ impl Kanata {
     fn parse_workspace(
         &self,
         root_folder: &Url,
-        main_cfg_file: Either<&Path, &Url>,
+        main_cfg_file: &Path,
         all_documents: &Documents,
     ) -> Result<(), CustomParseError> {
         log!(
@@ -108,22 +103,16 @@ impl Kanata {
 
         let mut file_content_provider = FileContentProvider::new(&mut get_file_content_fn_impl);
 
-        let cfg_file_name: PathBuf = match main_cfg_file {
-            Either::Left(path) => path.to_owned(),
-            // this always is absolute path.
-            Either::Right(url) => PathBuf::from(url.path()),
-        };
-
         let text = &file_content_provider
-            .get_file_content(&cfg_file_name)
+            .get_file_content(&main_cfg_file)
             .map_err(|e| {
                 CustomParseError::from_parse_error(
                     ParseError::new_without_span(e),
-                    cfg_file_name.to_string_lossy().to_string().as_str(),
+                    main_cfg_file.to_string_lossy().to_string().as_str(),
                 )
             })?;
 
-        parse_wrapper(text, &cfg_file_name, &mut file_content_provider)
+        parse_wrapper(text, &main_cfg_file, &mut file_content_provider)
     }
 }
 
@@ -170,9 +159,7 @@ pub struct KanataLanguageServer {
     kanata: Kanata,
     workspace_options: WorkspaceOptions,
     root: Option<Url>,
-    reload_diagnostics_debouncer: Option<EventDebouncer<()>>,
     send_diagnostics_callback: js_sys::Function,
-    mutex: sync::Mutex<()>,
 }
 
 /// Public API exposed via WASM.
@@ -215,9 +202,7 @@ impl KanataLanguageServer {
             kanata: Kanata::new(),
             workspace_options: config.into(),
             root: root_uri,
-            reload_diagnostics_debouncer: None,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
-            mutex: std::sync::Mutex::new(()),
         }
 
         // self_.reload_diagnostics_debouncer =
@@ -280,7 +265,6 @@ impl KanataLanguageServer {
                 let uris: Vec<_> = changes
                     .into_iter()
                     .map(|FileEvent { uri, typ }| {
-                        // fixme: why is this assert? why not just filter out non delete events?
                         assert_eq!(typ, FileChangeType::DELETED); // We only watch for `Deleted` events.
                         uri
                     })
@@ -356,7 +340,7 @@ impl KanataLanguageServer {
             // If this returns `None`, `uri` was already removed from the local set of tracked
             // documents. An easy way to encounter this is to right-click delete a Kanata file via
             // the VS Code UI, which races the `DidDeleteFiles` and `DidChangeWatchedFiles` events.
-            if let Some(doc) = self.remove_document(&uri) {
+            if self.remove_document(&uri).is_some() {
                 let diagnostics = self.get_diagnostics();
                 self.send_diagnostics(&diagnostics);
             } else {
@@ -377,8 +361,7 @@ impl KanataLanguageServer {
     }
     /// Remove tracked docs inside `dir`. Returns documents that were removed.
     fn remove_tracked_documents_in_dir(&mut self, dir: &Url) -> Vec<TextDocumentItem> {
-        // todo: what is even this abomination
-        let (in_removed_dir, not_in_removed_dir): (Documents, Documents) =
+        let (in_removed_dir, _not_in_removed_dir): (Documents, Documents) =
             self.documents.clone().into_iter().partition(|(uri, _)| {
                 // Zip pair of `Option<Split<char>>`s into `Option<(Split<char>, Split<char>)>`.
                 let maybe_segments = dir.path_segments().zip(uri.path_segments());
@@ -470,7 +453,7 @@ impl KanataLanguageServer {
     fn parse_workspace(&self, main_config_file: &str) -> Vec<CustomParseError> {
         log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
-        let main_cfg_file = Either::Left(pb.as_path());
+        let main_cfg_file = pb.as_path();
         let parse_result = self
             .kanata
             .parse_workspace(
@@ -508,19 +491,6 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    // fn reload_and_send_diagnostics_for_all_documents(&self) {
-    // let wait_lock_start = Instant::now();
-    // let get_diagnostics_start = Instant::now();
-    // let _guard = self.mutex.lock().unwrap();
-    // log!("lock wait finished in in {:?}", wait_lock_start.elapsed());
-    //     let documents = self.get_diagnostics.unwrap().put(());
-    //     self.send_diagnostics(documents);
-    // log!(
-    //     "get_diagnostics finished in in {:?}",
-    //     get_diagnostics_start.elapsed()
-    // );
-    // }
-
     /// Gets up-to-date diagnostics from kanata-parser.
     /// All previously set diagnostics will be cleared.
     fn get_diagnostics(&self) -> Diagnostics {
@@ -531,9 +501,6 @@ impl KanataLanguageServer {
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 
-        // todo: files not opened in workspace should be handled separately.
-        // maybe do: if len(docs) == 1 then parse_a_single_file_in_workspace
-
         let parse_errors = match &self.workspace_options {
             WorkspaceOptions::Single => {
                 let results: Vec<_> = docs
@@ -543,7 +510,6 @@ impl KanataLanguageServer {
                 results
             }
             WorkspaceOptions::Workspace { main_config_file } => {
-                // fixme: this will be unnecessarily called multiple times at startup
                 self.parse_workspace(main_config_file)
             }
         };
@@ -570,7 +536,7 @@ impl KanataLanguageServer {
                     }
                     None => {
                         // This shouldn't happen, as earlier we've made sure that spans
-                        // without assigned file have instead assigned main file as fallback .
+                        // without assigned file have instead assigned main file as fallback.
                         log!("skipped diagnostic not bound to any document: {:?}", diag);
                     }
                 };

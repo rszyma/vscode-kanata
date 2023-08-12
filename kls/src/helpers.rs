@@ -1,5 +1,3 @@
-// use std::collections::{BTreeMap, HashSet};
-
 use std::{collections::BTreeMap, path::Path, rc::Rc};
 
 use wasm_bindgen::JsValue;
@@ -8,7 +6,6 @@ use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
 use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
-// type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
 pub type Documents = BTreeMap<Url, TextDocumentItem>;
 pub type Diagnostics = BTreeMap<Url, PublishDiagnosticsParams>;
@@ -37,12 +34,6 @@ pub fn utf16_length(str: impl AsRef<str>) -> usize {
 
 pub fn slice_rc_str(rc_str: &Rc<str>, start: usize, end: usize) -> String {
     (&rc_str[start..end]).to_string()
-}
-
-#[derive(Debug, Clone)]
-pub enum Either<A, B> {
-    Left(A),
-    Right(B),
 }
 
 #[derive(Debug, Clone)]

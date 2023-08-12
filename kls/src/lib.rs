@@ -340,8 +340,8 @@ impl KanataLanguageServer {
             // If this returns `None`, `uri` was already removed from the local set of tracked
             // documents. An easy way to encounter this is to right-click delete a Kanata file via
             // the VS Code UI, which races the `DidDeleteFiles` and `DidChangeWatchedFiles` events.
-            if self.remove_document(&uri).is_some() {
-                let diagnostics = self.get_diagnostics();
+            if let Some(doc) = self.remove_document(&uri) {
+                let diagnostics = self.empty_diagnostics_for_a_single_document(&doc);
                 self.send_diagnostics(&diagnostics);
             } else {
                 log!("cannot delete untracked doc");
@@ -488,6 +488,12 @@ impl KanataLanguageServer {
         self.documents
             .iter()
             .map(empty_diagnostics_for_doc)
+            .collect()
+    }
+
+    fn empty_diagnostics_for_a_single_document(&self, doc: &TextDocumentItem) -> Diagnostics {
+        vec![empty_diagnostics_for_doc((&doc.uri, doc))]
+            .into_iter()
             .collect()
     }
 

@@ -25,9 +25,14 @@ use helpers::{empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagno
 
 struct Kanata {}
 
+const EXTENSION_ERROR_PREFIX: &str = "Kanata Extension: ";
 fn kanata_extension_error(err_msg: impl AsRef<str>) -> String {
-    format!(r"Kanata Extension: {}", err_msg.as_ref(),)
+    format!(r"{}{}", EXTENSION_ERROR_PREFIX, err_msg.as_ref(),)
 }
+
+const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or ask in GitHub discussions.
+    guide: https://github.com/jtroo/kanata/blob/main/docs/config.adoc
+    ask: https://github.com/jtroo/kanata/discussions";
 
 impl Kanata {
     fn new() -> Self {
@@ -427,8 +432,8 @@ impl KanataLanguageServer {
     fn diagnostics_from_kanata_parse_error(
         &self,
         err: &CustomParseError,
-    ) -> (Option<TextDocumentItem>, Diagnostic) {
-        let (message, severity) = (&err.msg, DiagnosticSeverity::ERROR);
+    ) -> (Option<TextDocumentItem>, Vec<Diagnostic>) {
+        let (message, severity) = (err.msg.clone(), DiagnosticSeverity::ERROR);
 
         let doc: Option<TextDocumentItem> = self
             .document_from_kanata_parse_error(&err)
@@ -440,14 +445,32 @@ impl KanataLanguageServer {
                 None
             });
 
-        let diagnostic = Diagnostic {
+        let is_extension_the_error_source = message.starts_with(EXTENSION_ERROR_PREFIX);
+
+        let mut diagnostics = vec![];
+
+        diagnostics.push(Diagnostic {
             range: err.into(),
             severity: Some(severity),
-            source: Some("vscode-kanata".to_owned()),
+            source: if is_extension_the_error_source {
+                Some("vscode-kanata".to_string())
+            } else {
+                Some("kanata-parser".to_string())
+            },
             message: message.clone(),
             ..Default::default()
-        };
-        (doc, diagnostic)
+        });
+
+        if !is_extension_the_error_source {
+            diagnostics.push(Diagnostic {
+                range: err.into(),
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                message: KANATA_PARSER_HELP.to_string(),
+                ..Default::default()
+            });
+        }
+
+        (doc, diagnostics)
     }
 
     fn parse_workspace(&self, main_config_file: &str) -> Vec<CustomParseError> {
@@ -537,7 +560,7 @@ impl KanataLanguageServer {
                             ),
                         );
 
-                        diags.diagnostics.push(diag.clone());
+                        diags.diagnostics.extend(diag);
                         acc.insert(url.to_owned(), diags.to_owned());
                     }
                     None => {

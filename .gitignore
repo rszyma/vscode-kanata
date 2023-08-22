@@ -3,3 +3,6 @@
 **/out
 yarn-error.log
 .vscode
+
+# A symbolic link to a local development kanata repo for testing changes.
+kanata-local

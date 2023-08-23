@@ -1,6 +1,6 @@
 [package]
 name = "kls"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["rszyma <rszyma.dev@gmail.com>"]
 description = "Language server for kanata keyboard remapper"
 keywords = ["kanata", "lsp", "vscode"]

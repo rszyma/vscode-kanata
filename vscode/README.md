@@ -18,6 +18,13 @@ If you encounter a bug, please report it here: https://github.com/rszyma/vscode-
 
 ### Changelog
 
+##### 0.2.0 (2023-08-23)
+
+- Invalid `deflocalkeys-win` and `deflocalkeys-wintercept` blocks now properly report errors (#1)
+- Added missing syntax highlighting,
+- Added the same help text as kanata uses to inform users where to look for help,
+- Updated kanata submodule to `5dc3296`
+
 ##### 0.1.0 (initial release) (2023-08-10)
 
 - Added syntax highlighting.

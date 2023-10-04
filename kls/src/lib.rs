@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
 };
@@ -23,7 +24,9 @@ use kanata_parser::cfg::{FileContentProvider, ParseError};
 mod helpers;
 use helpers::{empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents};
 
-struct Kanata {}
+struct Kanata {
+    def_local_keys_variant_to_apply: String,
+}
 
 const EXTENSION_ERROR_PREFIX: &str = "Kanata Extension: ";
 fn kanata_extension_error(err_msg: impl AsRef<str>) -> String {
@@ -35,8 +38,10 @@ const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or
     ask: https://github.com/jtroo/kanata/discussions";
 
 impl Kanata {
-    fn new() -> Self {
-        Self {}
+    fn new(def_local_keys_variant_to_apply: DefLocalKeysVariant) -> Self {
+        Self {
+            def_local_keys_variant_to_apply: def_local_keys_variant_to_apply.to_string(),
+        }
     }
 
     /// Parses with includes disabled.
@@ -68,6 +73,7 @@ impl Kanata {
             main_cfg_text,
             main_cfg_filename,
             &mut FileContentProvider::new(&mut get_file_content_fn_impl),
+            &self.def_local_keys_variant_to_apply,
         )
     }
 
@@ -117,7 +123,12 @@ impl Kanata {
                 )
             })?;
 
-        parse_wrapper(text, &main_cfg_file, &mut file_content_provider)
+        parse_wrapper(
+            text,
+            &main_cfg_file,
+            &mut file_content_provider,
+            &self.def_local_keys_variant_to_apply,
+        )
     }
 }
 
@@ -131,6 +142,8 @@ struct Config {
     includes_and_workspaces: IncludesAndWorkspaces,
     #[serde(rename = "mainConfigFile")]
     main_config_file: String,
+    #[serde(rename = "localKeysVariant")]
+    def_local_keys_variant: DefLocalKeysVariant,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -139,6 +152,29 @@ enum IncludesAndWorkspaces {
     Single,
     #[serde(rename = "workspace")]
     Workspace,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+enum DefLocalKeysVariant {
+    #[serde(rename = "not-set")]
+    NotSet,
+    #[serde(rename = "deflocalkeys-win")]
+    Win,
+    #[serde(rename = "deflocalkeys-wintercept")]
+    Wintercept,
+    #[serde(rename = "deflocalkeys-linux")]
+    Linux,
+}
+
+impl Display for DefLocalKeysVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DefLocalKeysVariant::NotSet => f.write_str("not-set"),
+            DefLocalKeysVariant::Win => f.write_str("deflocalkeys-win"),
+            DefLocalKeysVariant::Wintercept => f.write_str("deflocalkeys-wintercept"),
+            DefLocalKeysVariant::Linux => f.write_str("deflocalkeys-linux"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -204,7 +240,11 @@ impl KanataLanguageServer {
 
         Self {
             documents: BTreeMap::new(),
-            kanata: Kanata::new(),
+            kanata: Kanata::new(match config.def_local_keys_variant {
+                // use windows localkeys as fallback
+                DefLocalKeysVariant::NotSet => DefLocalKeysVariant::Win,
+                x => x,
+            }),
             workspace_options: config.into(),
             root: root_uri,
             send_diagnostics_callback: send_diagnostics_callback.clone(),

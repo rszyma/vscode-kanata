@@ -88,12 +88,14 @@ pub fn parse_wrapper(
     main_cfg_text: &str,
     main_cfg_path: &Path,
     file_content_provider: &mut FileContentProvider,
+    def_local_keys_variant_to_apply: &str,
 ) -> Result<(), CustomParseError> {
     kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
         &mut kanata_parser::cfg::ParsedState::default(),
         main_cfg_path.into(),
         file_content_provider,
+        def_local_keys_variant_to_apply,
     )
     .map(|_| {
         log!(

@@ -73,6 +73,16 @@
           "patternErrorMessage": "Main config filename must be a file located in the workspace root",
           "default": "kanata.kbd",
           "markdownDescription": "Main config filename. This setting applies only if the `includesAndWorkspaces` is set to `workspace`"
+        },
+        "vscode-kanata.localKeysVariant": {
+          "type": "string",
+          "enum": [
+            "deflocalkeys-win",
+            "deflocalkeys-wintercept",
+            "deflocalkeys-linux"
+          ],
+          "default": "not-set",
+          "markdownDescription": "Select which localkeys variant to use."
         }
       }
     }

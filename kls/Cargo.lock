@@ -243,7 +243,7 @@ dependencies = [
 
 [[package]]
 name = "kanata-keyberon"
-version = "0.150.0"
+version = "0.150.2"
 dependencies = [
  "arraydeque",
  "heapless",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "kanata-parser"
-version = "0.150.0"
+version = "0.150.2"
 dependencies = [
  "anyhow",
  "kanata-keyberon",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "kls"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",

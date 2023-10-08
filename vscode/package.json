@@ -1,6 +1,6 @@
 {
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "name": "vscode-kanata",
   "displayName": "Kanata Configuration Language",
   "author": "rszyma",
@@ -73,6 +73,16 @@
           "patternErrorMessage": "Main config filename must be a file located in the workspace root",
           "default": "kanata.kbd",
           "markdownDescription": "Main config filename. This setting applies only if the `includesAndWorkspaces` is set to `workspace`"
+        },
+        "vscode-kanata.localKeysVariant": {
+          "type": "string",
+          "enum": [
+            "deflocalkeys-win",
+            "deflocalkeys-wintercept",
+            "deflocalkeys-linux"
+          ],
+          "default": "not-set",
+          "markdownDescription": "Select which localkeys variant to use."
         }
       }
     }

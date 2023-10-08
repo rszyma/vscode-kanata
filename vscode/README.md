@@ -18,6 +18,11 @@ If you encounter a bug, please report it here: https://github.com/rszyma/vscode-
 
 ### Changelog
 
+##### 0.3.0 (2023-10-08)
+
+- Fixed: Unknown key in defsrc while it is defined in deflocalkeys (#3)
+- Updated kanata to [ef23c68](https://github.com/jtroo/kanata/commits/ef23c68034dc4fa2541db69712ecc4359cafdeea)
+
 ##### 0.2.0 (2023-08-23)
 
 - Invalid `deflocalkeys-win` and `deflocalkeys-wintercept` blocks now properly report errors (#1)

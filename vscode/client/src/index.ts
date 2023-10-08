@@ -12,12 +12,14 @@ import {
   Disposable,
   ConfigurationChangeEvent,
   FileSystemWatcher,
+  commands,
 } from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
   SettingMonitor,
   TransportKind,
+  MessageActionItem,
 } from 'vscode-languageclient/node';
 
 const extensionName = 'Kanata Configuration Language';
@@ -112,6 +114,11 @@ class Extension implements Disposable {
       module: serverModulePath,
       transport: TransportKind.ipc,
     };
+
+    const localKeysVariant = workspace
+      .getConfiguration()
+      .get<string>('vscode-kanata.localKeysVariant', '');
+
     const clientOpts: LanguageClientOptions = {
       documentSelector: [
         { scheme: 'file', language: 'kanata', pattern: '**/*.kbd' },
@@ -127,6 +134,7 @@ class Extension implements Disposable {
         includesAndWorkspaces: workspace
           .getConfiguration()
           .get<string>('vscode-kanata.includesAndWorkspaces', ''),
+        localKeysVariant: localKeysVariant,
       },
     };
 
@@ -141,6 +149,14 @@ class Extension implements Disposable {
     } else {
       // When file is opened in non-workspace mode, vscode will automatically
       // call textDocument/didOpen, so no need to do anything here.
+    }
+
+    if (localKeysVariant === 'not-set') {
+      showLocalkeysNotSetNotification()
+        .then(null)
+        .catch(e => {
+          outputChannel.appendLine(`error: ${e}`);
+        });
     }
   }
 
@@ -183,4 +199,21 @@ async function openDocument(uri: Uri) {
   // workspace.openTextDocument has a build-in mechanism that avoids reopening
   // already opened file, so no need to handle that manually.
   await workspace.openTextDocument(uri);
+}
+
+async function showLocalkeysNotSetNotification() {
+  const message =
+    'Please go to vscode settings and select `deflocalkeys` variant you want to use.';
+  const openSettingsAction: MessageActionItem = { title: 'Open Settings' };
+
+  await window
+    .showInformationMessage(message, openSettingsAction)
+    .then(async selectedAction => {
+      if (selectedAction === openSettingsAction) {
+        await commands.executeCommand(
+          'workbench.action.openSettings',
+          'vscode-kanata.localKeysVariant'
+        );
+      }
+    });
 }

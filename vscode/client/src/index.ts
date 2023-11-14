@@ -13,6 +13,7 @@ import {
   ConfigurationChangeEvent,
   FileSystemWatcher,
   commands,
+  ConfigurationTarget,
 } from 'vscode';
 import {
   LanguageClient,
@@ -29,7 +30,28 @@ const outputChannel = window.createOutputChannel(extensionName);
 let ext: Extension;
 
 export async function activate(ctx: ExtensionContext): Promise<void> {
-  // Update clients when workspace folders change.
+  const cmd1 = commands.registerCommand(
+    'vscode-kanata.setSetCurrentFileAsMain',
+    async () => {
+      const editor = window.activeTextEditor;
+      if (editor) {
+        const fileName = editor.document.fileName;
+        const cfg = workspace.getConfiguration();
+        await cfg.update(
+          'vscode-kanata.mainConfigFile',
+          fileName,
+          ConfigurationTarget.Workspace
+        );
+        // await window.showInformationMessage(
+        //   `Set vscode-kanata.mainConfigFile to ${fileName}`
+        // );
+      } else {
+        await window.showErrorMessage('No active editor');
+      }
+    }
+  );
+  ctx.subscriptions.push(cmd1);
+
   ext = new Extension(ctx);
   await ext.start();
   ctx.subscriptions.push(ext);

@@ -50,6 +50,13 @@
         "path": "./syntaxes/kanata.tmLanguage.json"
       }
     ],
+    "commands": [
+      {
+        "command": "vscode-kanata.setSetCurrentFileAsMain",
+        "category": "Kanata",
+        "title": "Set current file as main"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Kanata",

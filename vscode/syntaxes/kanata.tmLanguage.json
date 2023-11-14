@@ -20,7 +20,7 @@
         },
         {
             "_description": "top-level blocks",
-            "match": "(?:\\(\\s*)(defcfg|defsrc|defalias|deflayer|defvar|deffakekeys|defseq|defchords|defaliasenvcond|defoverrides|deflocalkeys-linux|deflocalkeys-win|deflocalkeys-wintercept|include)",
+            "match": "(?:\\(\\s*)(defcfg|defsrc|defalias|deflayer|defvar|deffakekeys|defseq|defchords|defaliasenvcond|defoverrides|deflocalkeys-linux|deflocalkeys-win|deflocalkeys-wintercept|include)(?=\\s|[()])",
             "captures": {
                 "1": {
                     "name": "keyword.control.kanata"

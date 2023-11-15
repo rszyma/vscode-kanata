@@ -19,25 +19,21 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Set up Rust
-      uses: actions/setup-rust@v1
-      with:
-        rust-version: stable
-
-    - run: rustup target add wasm32-unknown-unknown
-
-    - name: Install wasm-pack
-      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    - name: Install dependencies
+      run: |
+        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        rustup target add wasm32-unknown-unknown
 
     - name: Build with wasm-pack
       run: wasm-pack build
 
+    - name: Test with wasm-pack
+      run: wasm-pack test --headless --firefox
+      
     - name: Lint and Format
       run: |
         rustup component add clippy
-        cargo clippy --target wasm32-unknown-unknown --verbose
-        cargo clippy --target wasm32-unknown-unknown --verbose -- -D warnings
-        cargo fmt --target wasm32-unknown-unknown --check --verbose
+        cargo clippy --target wasm32-unknown-unknown
+        cargo clippy --target wasm32-unknown-unknown -- -D warnings
+        cargo fmt --check
 
-    - name: Test with wasm-pack
-      run: wasm-pack test --headless --firefox

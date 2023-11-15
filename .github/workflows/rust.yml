@@ -12,40 +12,32 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./kls
-        
+
     steps:
-    
-    - uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
       with:
         submodules: recursive
-        
-    - run: rustup target add wasm32-unknown-unknown
-    
-    - name: Run `cargo build`
-      run: cargo build --target wasm32-unknown-unknown --verbose 
-      
-    - name: Run `cargo test`
-      run: cargo test --target wasm32-unknown-unknown --verbose
 
-    - run: rustup component add clippy
-      
-    - name: Run `cargo clippy`
-      run: cargo clippy --target wasm32-unknown-unknown --verbose
-      
-    - name: Run `cargo clippy` (error on warnings)
-      run: cargo clippy --target wasm32-unknown-unknown --verbose -- -D warnings
-      
-    - name: Run `cargo fmt`
-      run: cargo fmt --target wasm32-unknown-unknown --check --verbose
+    - name: Set up Rust
+      uses: actions/setup-rust@v1
+      with:
+        rust-version: stable
+
+    - run: rustup target add wasm32-unknown-unknown
 
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-    
-    - name: Run `wasm-pack build`
-      run: wasm-pack build --target nodejs
 
-    - name: Run `wasm-pack test`
+    - name: Build with wasm-pack
+      run: wasm-pack build
+
+    - name: Lint and Format
+      run: |
+        rustup component add clippy
+        cargo clippy --target wasm32-unknown-unknown --verbose
+        cargo clippy --target wasm32-unknown-unknown --verbose -- -D warnings
+        cargo fmt --target wasm32-unknown-unknown --check --verbose
+
+    - name: Test with wasm-pack
       run: wasm-pack test --headless --firefox

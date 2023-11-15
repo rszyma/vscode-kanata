@@ -1,0 +1,47 @@
+name: cargo-checks
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./kls
+        
+    steps:
+    
+    - uses: actions/checkout@v3
+        
+    - run: rustup component add clippy
+    
+    - name: Run `cargo build`
+      run: cargo build --target wasm32-unknown-unknown --verbose 
+      
+    - name: Run `cargo test`
+      run: cargo test --target wasm32-unknown-unknown --verbose
+      
+    - name: Run `cargo clippy`
+      run: cargo clippy --target wasm32-unknown-unknown --verbose
+      
+    - name: Run `cargo clippy` (error on warnings)
+      run: cargo clippy --target wasm32-unknown-unknown --verbose -- -D warnings
+      
+    - name: Run `cargo fmt`
+      run: cargo fmt --target wasm32-unknown-unknown --check --verbose
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    
+    - name: Run `wasm-pack build`
+      run: wasm-pack build --target nodejs
+
+    - name: Run `wasm-pack test`
+      run: wasm-pack test --headless --firefox

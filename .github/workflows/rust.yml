@@ -22,13 +22,15 @@ jobs:
       with:
         submodules: recursive
         
-    - run: rustup component add clippy
+    - run: rustup target add wasm32-unknown-unknown
     
     - name: Run `cargo build`
       run: cargo build --target wasm32-unknown-unknown --verbose 
       
     - name: Run `cargo test`
       run: cargo test --target wasm32-unknown-unknown --verbose
+
+    - run: rustup component add clippy
       
     - name: Run `cargo clippy`
       run: cargo clippy --target wasm32-unknown-unknown --verbose

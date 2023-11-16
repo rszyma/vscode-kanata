@@ -55,13 +55,11 @@ impl Kanata {
     ) -> Result<(), CustomParseError> {
         let mut get_file_content_fn_impl = |_: &Path| {
             if is_opened_in_workspace {
-                Err(kanata_extension_error(vec![
-                    "Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
+                Err(kanata_extension_error(["Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
                     "If you want to enable `includes` support, you need to:",
                     "\t1. Go to the settings in VS Code (File > Preferences > Settings)",
                     "\t2. Navigate to vscode-kanata settings: (Extensions > Kanata)",
-                    "\t3. Change `Includes And Workspaces` to `workspace`",
-                ].join("\n")))
+                    "\t3. Change `Includes And Workspaces` to `workspace`"].join("\n")))
             } else {
                 Err(kanata_extension_error(
                     "Includes can't be analyzed, because the current file is not opened in a workspace. Please, open the containing folder (File > Open Folder).",

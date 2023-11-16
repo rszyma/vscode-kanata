@@ -33,7 +33,7 @@ pub fn utf16_length(str: impl AsRef<str>) -> usize {
 }
 
 pub fn slice_rc_str(rc_str: &Rc<str>, start: usize, end: usize) -> String {
-    (&rc_str[start..end]).to_string()
+    rc_str[start..end].to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -48,34 +48,33 @@ impl CustomParseError {
     pub fn from_parse_error(e: ParseError, main_cfg_file: &str) -> Self {
         Self {
             msg: e.msg,
-            span: e.span.unwrap_or_else(|| {
-                let mut span = Span::default();
-                span.file_name = main_cfg_file.into();
-                span
+            span: e.span.unwrap_or_else(|| kanata_parser::cfg::sexpr::Span {
+                file_name: main_cfg_file.into(),
+                ..Default::default()
             }),
         }
     }
 }
 
-impl Into<lsp_types::Range> for &CustomParseError {
-    fn into(self) -> lsp_types::Range {
+impl From<&CustomParseError> for lsp_types::Range {
+    fn from(val: &CustomParseError) -> Self {
         lsp_types::Range {
             start: lsp_types::Position::new(
-                self.span.start.line.try_into().unwrap(),
+                val.span.start.line.try_into().unwrap(),
                 utf16_length(slice_rc_str(
-                    &self.span.file_content,
-                    self.span.start.line_beginning,
-                    self.span.start.absolute,
+                    &val.span.file_content,
+                    val.span.start.line_beginning,
+                    val.span.start.absolute,
                 ))
                 .try_into()
                 .unwrap(),
             ),
             end: lsp_types::Position::new(
-                self.span.end.line.try_into().unwrap(),
+                val.span.end.line.try_into().unwrap(),
                 utf16_length(slice_rc_str(
-                    &self.span.file_content,
-                    self.span.end.line_beginning,
-                    self.span.end.absolute,
+                    &val.span.file_content,
+                    val.span.end.line_beginning,
+                    val.span.end.absolute,
                 ))
                 .try_into()
                 .unwrap(),
@@ -93,7 +92,7 @@ pub fn parse_wrapper(
     kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
         &mut kanata_parser::cfg::ParsedState::default(),
-        main_cfg_path.into(),
+        main_cfg_path,
         file_content_provider,
         def_local_keys_variant_to_apply,
     )
@@ -103,7 +102,6 @@ pub fn parse_wrapper(
             main_cfg_path.to_string_lossy(),
         );
         // Ignoring the non-error parser result for now.
-        ()
     })
     .map_err(|e: ParseError| {
         CustomParseError::from_parse_error(e, main_cfg_path.to_string_lossy().to_string().as_str())

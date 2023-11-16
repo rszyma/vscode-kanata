@@ -97,7 +97,7 @@ impl Kanata {
                 Url::from_str(format!("file://{}", filepath.to_string_lossy()).as_ref())
                     .map_err(|_| INVALID_PATH_ERROR.to_string())?
             } else {
-                Url::join(&root_folder, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
+                Url::join(root_folder, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
             };
 
             log!("searching URL across opened documents: {}", file_url);
@@ -115,7 +115,7 @@ impl Kanata {
         let mut file_content_provider = FileContentProvider::new(&mut get_file_content_fn_impl);
 
         let text = &file_content_provider
-            .get_file_content(&main_cfg_file)
+            .get_file_content(main_cfg_file)
             .map_err(|e| {
                 CustomParseError::from_parse_error(
                     ParseError::new_without_span(e),
@@ -125,7 +125,7 @@ impl Kanata {
 
         parse_wrapper(
             text,
-            &main_cfg_file,
+            main_cfg_file,
             &mut file_content_provider,
             &self.def_local_keys_variant_to_apply,
         )
@@ -273,7 +273,7 @@ impl KanataLanguageServer {
                 let DidOpenTextDocumentParams { text_document } = from_value(params).unwrap();
 
                 log!("opening: {}", text_document.uri);
-                if self.upsert_document(text_document.clone()).is_some() {
+                if self.upsert_document(text_document).is_some() {
                     log!("reopened tracked doc");
                 }
 
@@ -419,7 +419,7 @@ impl KanataLanguageServer {
             .iter()
             .map(|(url, doc)| {
                 log!("tracked document got deleted: {}", url);
-                self.remove_document(&url);
+                self.remove_document(url);
                 doc.to_owned()
             })
             .collect()
@@ -443,7 +443,7 @@ impl KanataLanguageServer {
         let url: Url = match &self.root {
             Some(root) => {
                 let filename = err.span.file_name();
-                Url::join(&root, &filename).map_err(|e| anyhow!(e.to_string()))?
+                Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
             None => match &self.documents.first_key_value() {
                 Some(entry) => entry.0.to_owned(),
@@ -476,7 +476,7 @@ impl KanataLanguageServer {
         let (message, severity) = (err.msg.clone(), DiagnosticSeverity::ERROR);
 
         let doc: Option<TextDocumentItem> = self
-            .document_from_kanata_parse_error(&err)
+            .document_from_kanata_parse_error(err)
             .unwrap_or_else(|e| {
                 log!(
                     "Error in `document_from_kanata_diagnostic_context`: {:?}",
@@ -497,7 +497,7 @@ impl KanataLanguageServer {
             } else {
                 Some("kanata-parser".to_string())
             },
-            message: message.clone(),
+            message,
             ..Default::default()
         });
 
@@ -517,18 +517,17 @@ impl KanataLanguageServer {
         log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
         let main_cfg_file = pb.as_path();
-        let parse_result = self
-            .kanata
+
+        self.kanata
             .parse_workspace(
                 &self.root.clone().expect("should be set in workspace mode"),
                 main_cfg_file,
                 &self.documents,
             )
             .map(|_| None)
-            .unwrap_or_else(|e| Some(e))
+            .unwrap_or_else(Some)
             .into_iter()
-            .collect::<Vec<_>>();
-        parse_result
+            .collect::<Vec<_>>()
     }
 
     fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> Option<CustomParseError> {
@@ -540,7 +539,7 @@ impl KanataLanguageServer {
         self.kanata
             .parse_single_file(&main_cfg_filename, main_cfg_text, is_opened_in_workspace)
             .map(|_| None)
-            .unwrap_or_else(|e| Some(e))
+            .unwrap_or_else(Some)
     }
 
     /// Returns empty diagnostics for all tracked docs.
@@ -565,8 +564,8 @@ impl KanataLanguageServer {
     fn get_diagnostics(&self) -> Diagnostics {
         let docs = self
             .documents
-            .iter()
-            .map(|(_, doc)| doc.to_owned())
+            .values()
+            .map(|doc| doc.to_owned())
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 

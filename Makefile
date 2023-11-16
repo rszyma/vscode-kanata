@@ -21,7 +21,7 @@ package: wasm
 CARGO_FLAGS ?= --dev
 
 wasm: clean
-	$(MAKE) CARGO_FLAGS=$(CARGO_FLAGS) OUT_DIR=$$(pwd)/out -C ../kls build
+	$(MAKE) CARGO_FLAGS=$(CARGO_FLAGS) OUT_DIR=$$(pwd)/out -C kls build
 
 node_modules: package.json
 	yarn install

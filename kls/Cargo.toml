@@ -1,6 +1,6 @@
 [package]
 name = "kls"
-version = "0.3.0"
+version = "0.0.0"
 authors = ["rszyma <rszyma.dev@gmail.com>"]
 description = "Language server for kanata keyboard remapper"
 keywords = ["kanata", "lsp", "vscode"]
@@ -20,7 +20,7 @@ bench = false
 # Uncomment below and comment out above for testing local changes.
 # Otherwise any changes to the local files will not reflect in the compiled
 # binary.
-kanata-parser = { path = "../kanata/parser" }
+kanata-parser = { path = "../kanata-local/parser" }
 
 console_error_panic_hook = "0.1.6"
 js-sys = "0.3.53"

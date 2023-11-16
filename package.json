@@ -5,7 +5,7 @@
   "displayName": "Kanata Configuration Language",
   "author": "rszyma",
   "publisher": "rszyma",
-  "icon": "kanata_icon.png",
+  "icon": "assets/kanata_icon.png",
   "description": "Language support for kanata configuration files",
   "keywords": [
     "kanata",

@@ -52,6 +52,8 @@ jobs:
 
     - name: Setup - yarn
       run: yarn
+      working-directory: .
 
     - name: Build extension
       run: make package
+      working-directory: .

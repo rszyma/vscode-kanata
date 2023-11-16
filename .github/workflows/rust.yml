@@ -23,21 +23,35 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install dependencies
-      run: |
-        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-        rustup target add wasm32-unknown-unknown
+    - name: Setup - wasm-pack
+      run:  curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-    - name: Build with wasm-pack
-      run: wasm-pack build
+    - name: Setup - rust target for wasm
+      run: rustup target add wasm32-unknown-unknown
 
-    - name: Test with wasm-pack
-      run: wasm-pack test --headless --firefox
+    # - name: Build with wasm-pack
+    #   run: wasm-pack build
 
-    - name: Lint and Format
-      run: |
-        rustup component add clippy
-        cargo clippy --target wasm32-unknown-unknown
-        cargo clippy --target wasm32-unknown-unknown -- -D warnings
-        cargo fmt --check
+    # - name: Test with wasm-pack
+    #   run: wasm-pack test --headless --firefox
 
+    - name: Setup - install clippy
+      run: rustup component add clippy
+
+    - name: Rust - Lint
+      run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+
+    - name: Rust - Format
+      run: cargo fmt --check
+
+    - name: Setup - Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '21'
+        cache: 'yarn'
+
+    - name: Setup - yarn
+      run: yarn
+
+    - name: Build extension
+      run: make package

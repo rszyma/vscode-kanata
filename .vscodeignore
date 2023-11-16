@@ -1,0 +1,14 @@
+# Ignore everything.
+**
+
+# Selectively un-ignore files we want included in the released extension.
+!language-configuration.json
+!LICENSE
+!assets
+!out/client.js
+!out/kls_bg.wasm
+!out/server.js
+!package.json
+!README.md
+!CHANGELOG.md
+!syntaxes/kanata.tmLanguage.json

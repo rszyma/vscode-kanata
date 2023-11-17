@@ -39,6 +39,14 @@ const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or
 
 impl Kanata {
     fn new(def_local_keys_variant_to_apply: DefLocalKeysVariant) -> Self {
+        *kanata_parser::keys::OSCODE_MAPPING_VARIANT.lock() = match def_local_keys_variant_to_apply
+        {
+            DefLocalKeysVariant::Win | DefLocalKeysVariant::Wintercept => {
+                kanata_parser::keys::Platform::Win
+            }
+            DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
+            DefLocalKeysVariant::NotSet => unreachable!(),
+        };
         Self {
             def_local_keys_variant_to_apply: def_local_keys_variant_to_apply.to_string(),
         }

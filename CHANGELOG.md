@@ -4,6 +4,12 @@
 
 * no changes yet
 
+### 0.4.0
+
+* Fixed: Linux OsCode mapping are no longer used on Windows ([#5](https://github.com/rszyma/vscode-kanata/issues/5))
+* Added item to command palette: `Kanata: Set current file as main`
+* Updated kanata to [54daa6b](https://github.com/jtroo/kanata/tree/54daa6b49eadf4cf3c2f7fe9c369ce195084d348)
+
 ### 0.3.0
 
 * Fixed: Unknown key in defsrc while it is defined in deflocalkeys (#3)

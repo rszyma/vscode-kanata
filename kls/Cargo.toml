@@ -16,11 +16,7 @@ crate-type = ["cdylib"]
 bench = false
 
 [dependencies]
-# kanata-parser = "0.20.0"
-# Uncomment below and comment out above for testing local changes.
-# Otherwise any changes to the local files will not reflect in the compiled
-# binary.
-kanata-parser = { path = "../kanata/parser" }
+kanata-parser = { path = "../kanata/parser", features = ["cmd"]}
 
 console_error_panic_hook = "0.1.6"
 js-sys = "0.3.53"

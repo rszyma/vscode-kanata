@@ -4,11 +4,15 @@
 
 * no changes yet
 
+### 0.4.1
+
+* Fixed: `cmd` action no longer shows an error "cmd is not enabled" even if `danger-enable-cmd` is enabled ([#8](https://github.com/rszyma/vscode-kanata/issues/8))
+
 ### 0.4.0
 
 * Fixed: Linux OsCode mapping are no longer used on Windows ([#5](https://github.com/rszyma/vscode-kanata/issues/5))
 * Added item to command palette: `Kanata: Set current file as main`
-* Updated kanata to [54daa6b](https://github.com/jtroo/kanata/tree/54daa6b49eadf4cf3c2f7fe9c369ce195084d348)
+* Updated kanata to [54daa6b](https://github.com/jtroo/kanata/tree/54daa6b)
 
 ### 0.3.0
 

@@ -6,7 +6,7 @@ install:
     make package
     code --install-extension kanata.vsix
 
-# Updates kanata to latest git + adds notice about it to CHANGELOG.md
+# Creates a commit that updates kanata to latest git and adds notice about it to CHANGELOG.md
 bump_kanata:
     #!/bin/sh
     set -euxo pipefail
@@ -18,6 +18,9 @@ bump_kanata:
     ! grep -q "$HASH" CHANGELOG.md
     awk '/^### [0-9]/ && found==0 {found=1} found==0 && /Updated kanata to/ {next} 1' CHANGELOG.md > temp && mv temp CHANGELOG.md
     just _add_to_changelog "Updated kanata to \[$HASH\]\(https\:\/\/github\.com\/jtroo\/kanata\/tree\/$HASH\)"
+    just _ensure_no_staged_changes
+    git add CHANGELOG.md kanata
+    git commit -m "chore: bump kanata to $HASH"
 
 # Bumps version number, pushes a "new version" commit/tags, builds, uploads to VS Code marketplace.
 release VERSION:
@@ -42,3 +45,6 @@ _add_to_changelog TEXT:
 
 _ensure_clean_directory:
     git diff-index --quiet HEAD --
+
+_ensure_no_staged_changes:
+    git diff --cached --quiet

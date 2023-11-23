@@ -6,7 +6,7 @@ install:
     make package
     code --install-extension kanata.vsix
 
-# Creates a commit that updates kanata to latest git and adds notice about it to CHANGELOG.md
+# Creates a commit, that updates kanata to latest git and adds notice about it to CHANGELOG.md
 bump_kanata:
     #!/bin/sh
     set -euxo pipefail
@@ -22,22 +22,18 @@ bump_kanata:
     git add CHANGELOG.md kanata
     git commit -m "chore: bump kanata to $HASH"
 
-# Bumps version number, pushes a "new version" commit/tags, builds, uploads to VS Code marketplace.
 release VERSION:
-    just _ensure_clean_directory
-
+    just _ensure_no_staged_changes
     git checkout main
     git pull
-    git checkout -b release-v{{VERSION}}
     sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{VERSION}}\"/' package.json
     sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{VERSION}}/' CHANGELOG.md
-    git commmit -m "Release v{{VERSION}}"
-    git push origin release-v{{VERSION}}
-
+    vsce publish {{VERSION}}
+    git add CHANGELOG.md package.json
+    git commit -m "Release v{{VERSION}}"
+    git push
     git tag v{{VERSION}}
     git push --tags
-
-    vsce publish {{VERSION}}
 
 _add_to_changelog TEXT:
     sed -i '/no changes yet/Id' CHANGELOG.md

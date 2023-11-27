@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* Updated kanata to [2db1e12](https://github.com/jtroo/kanata/tree/2db1e12)
+* Updated kanata to [2db1e12](https://github.com/jtroo/kanata/tree/2db1e12) (v1.5.0-prerelease-3)
 
 ### 0.4.2
 

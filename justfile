@@ -35,6 +35,12 @@ release VERSION:
     git tag v{{VERSION}}
     git push --tags
 
+use_local_repo:
+    sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml
+
+use_origin_repo:
+    sed -i 's/kanata-local\/parser/kanata\/parser/' kls/Cargo.toml
+
 _add_to_changelog TEXT:
     sed -i '/no changes yet/Id' CHANGELOG.md
     sed -i "N;s/^### Unreleased\n/\0\n\* {{TEXT}}/" CHANGELOG.md

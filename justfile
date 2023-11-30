@@ -47,6 +47,8 @@ pre_release VERSION:
     git add CHANGELOG.md package.json
     git commit -m "Pre-Release v{{VERSION}}"
     git push
+    git tag v{{VERSION}}
+    git push --tags
 
 use_local_repo:
     sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml

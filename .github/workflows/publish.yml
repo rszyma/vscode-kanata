@@ -7,7 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
 
 jobs:
   publish-prerelease:
@@ -30,8 +29,19 @@ jobs:
 
     - name: Try bump kanata
       run: |
-        just bump_kanata
-        git push
+        status=$(just bump_kanata; echo $?)
+        if [ $status -eq 0 ]; then
+          git push
+        elif [ $status -eq 123 ]; then
+          # Status 123 means that the version of kanata is already most recent.
+          # Ideally, we'd like to the workflow to appear as canceled.
+          gh run cancel ${{ github.run_id }}
+          gh run watch ${{ github.run_id }}
+        else
+          echo "Failed with $status"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Setup - cargo cache
       uses: actions/cache@v3
@@ -73,3 +83,5 @@ jobs:
 
     - name: Build and publish
       run: just pre_release ${{ steps.new-version.outputs.value }}
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}

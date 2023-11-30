@@ -15,7 +15,7 @@ bump_kanata:
     HASH=$(git rev-parse --short HEAD)
     cd ..
     # Exit early without updating changelog if a bump notice was already added in "Unreleased" section.
-    ! grep -q "$HASH" CHANGELOG.md
+    $(! grep -q "$HASH" CHANGELOG.md)
     awk '/^### [0-9]/ && found==0 {found=1} found==0 && /Updated kanata to/ {next} 1' CHANGELOG.md > temp && mv temp CHANGELOG.md
     just _add_to_changelog "Updated kanata to \[$HASH\]\(https\:\/\/github\.com\/jtroo\/kanata\/tree\/$HASH\)"
     just _ensure_no_staged_changes
@@ -34,6 +34,17 @@ release VERSION:
     git push
     git tag v{{VERSION}}
     git push --tags
+
+pre_release VERSION:
+    just _ensure_no_staged_changes
+    git checkout main
+    git pull
+    sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{VERSION}}\"/' package.json
+    sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{VERSION}}/' CHANGELOG.md
+    vsce publish {{VERSION}} --pre-release
+    git add CHANGELOG.md package.json
+    git commit -m "Pre-Release v{{VERSION}}"
+    git push
 
 use_local_repo:
     sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml

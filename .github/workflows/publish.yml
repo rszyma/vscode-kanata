@@ -1,0 +1,75 @@
+name: publish
+
+on:
+  schedule:
+    - cron: '30 5 * * *' # every day at 5:30 AM
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
+
+jobs:
+  publish-prerelease:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Setup - git
+      run: |
+        git --version
+        git config user.name "GitHub Actions Bot"
+        git config user.email "<>"
+        git status
+
+    - name: Setup - just
+      uses: taiki-e/install-action@just
+
+    - name: Try bump kanata
+      run: |
+        just bump_kanata
+        git push
+
+    - name: Setup - cargo cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Setup - wasm-pack and wasm32-unknown-unknown target
+      run: |
+        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        rustup target add wasm32-unknown-unknown
+
+    - name: Setup - Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '21'
+        cache: 'yarn'
+
+    - name: Setup - install yarn
+      run: yarn
+
+    - name: Extract version from package.json
+      uses: sergeysova/jq-action@v2
+      id: version
+      with:
+        cmd: 'jq .version package.json --raw-output --exit-status'
+
+    - name: Increment semver patch number
+      id: new-version
+      run: curl https://raw.githubusercontent.com/rszyma/shell-semver/master/increment_version.sh -sSf | sh -s -- -p
+
+    - name: Setup - vsce
+      run: yarn global add vsce
+
+    - name: Build and publish
+      run: just pre_release ${{ steps.new-version.outputs.value }}

@@ -27,18 +27,29 @@ jobs:
     - name: Setup - just
       uses: taiki-e/install-action@just
 
+    - name: Check for new commits in kanata/parser
+      working-directory:
+        ./kanata
+      run: |
+        if git diff --quiet origin/main -- parser; then
+          # no new commits, skip release.
+          # todo: instead of canceling, pass, but without running remaining steps.
+          gh run cancel ${{ github.run_id }}
+          gh run watch ${{ github.run_id }}
+        fi
+
     - name: Try bump kanata
       run: |
-        status=$(just bump_kanata; echo $?)
+        status=$(just --quiet bump_kanata; echo $?)
         if [ $status -eq 0 ]; then
           git push
         elif [ $status -eq 123 ]; then
-          # Status 123 means that the version of kanata is already most recent.
-          # Ideally, we'd like to the workflow to appear as canceled.
-          gh run cancel ${{ github.run_id }}
-          gh run watch ${{ github.run_id }}
+          # Status 123 means that the version of kanata is already
+          # most recent (at least according to CHANGELOG.md).
+          exit 1
         else
           echo "Failed with $status"
+          exit 1
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,7 +87,7 @@ jobs:
 
     - name: Increment semver patch number
       id: new-version
-      run: curl https://raw.githubusercontent.com/rszyma/shell-semver/master/increment_version.sh -sSf | sh -s -- -p
+      run: curl https://raw.githubusercontent.com/rszyma/shell-semver/master/increment_version.sh -sSf | sh -s -- -p ${{ steps.version.outputs.value }}
 
     - name: Setup - vsce
       run: yarn global add vsce

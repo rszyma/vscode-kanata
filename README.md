@@ -1,6 +1,9 @@
 # vscode-kanata
-[![GitHub Repo stars](https://img.shields.io/github/stars/rszyma/vscode-kanata)](https://github.com/rszyma/vscode-kanata)
-[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/rszyma.vscode-kanata)](https://marketplace.visualstudio.com/items?itemName=rszyma.vscode-kanata)
+[![GitHub Repo stars](https://img.shields.io/github/stars/rszyma/vscode-kanata?logo=github)](https://github.com/rszyma/vscode-kanata)
+[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/rszyma.vscode-kanata?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=rszyma.vscode-kanata)
+![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/rszyma/vscode-kanata/rust.yml)
+<!-- ![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/rszyma/vscode-kanata/publish.yml?label=nightly%20kanata%20version%20bump) -->
+<!-- [![Visual Studio Marketplace Version (including pre-releases)](https://img.shields.io/visual-studio-marketplace/v/rszyma.vscode-kanata)](https://marketplace.visualstudio.com/items?itemName=rszyma.vscode-kanata) -->
 
 A VS Code extension that adds language support for [kanata](https://github.com/jtroo/kanata) configuration files.
 

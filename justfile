@@ -37,19 +37,6 @@ release VERSION:
     git tag v{{VERSION}}
     git push --tags
 
-pre_release VERSION:
-    just _ensure_no_staged_changes
-    git checkout main
-    git pull
-    sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{VERSION}}\"/' package.json
-    sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{VERSION}}/' CHANGELOG.md
-    vsce publish {{VERSION}} --pre-release
-    git add CHANGELOG.md package.json
-    git commit -m "Pre-Release v{{VERSION}}"
-    git push
-    git tag v{{VERSION}}
-    git push --tags
-
 use_local_repo:
     sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml
 

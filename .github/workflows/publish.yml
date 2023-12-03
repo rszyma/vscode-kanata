@@ -101,6 +101,6 @@ jobs:
     - name: Build and publish
       run: |
         make package
-        just pre_release ${{ steps.new_version.outputs.value }}
+        just release ${{ steps.new_version.outputs.value }}
       env:
         VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}

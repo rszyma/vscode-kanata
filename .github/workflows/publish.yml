@@ -20,8 +20,8 @@ jobs:
     - name: Setup - git
       run: |
         git --version
-        git config user.name "GitHub Actions Bot"
-        git config user.email "<>"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
         git status
 
     - name: Setup - just
@@ -40,7 +40,7 @@ jobs:
 
     - name: Try bump kanata
       run: |
-        status=$(just --quiet bump_kanata; echo $?)
+        status=$(just bump_kanata > /dev/null 2>&1; echo $?)
         if [ $status -eq 0 ]; then
           git push
         elif [ $status -eq 123 ]; then
@@ -86,13 +86,21 @@ jobs:
         cmd: 'jq .version package.json --raw-output --exit-status'
 
     - name: Increment semver patch number
-      id: new-version
-      run: curl https://raw.githubusercontent.com/rszyma/shell-semver/master/increment_version.sh -sSf | sh -s -- -p ${{ steps.version.outputs.value }}
+      id: new_version
+      run: |
+        echo "value=$(curl https://raw.githubusercontent.com/rszyma/shell-semver/master/increment_version.sh -sSf | bash -s -- -p ${{ steps.version.outputs.value }})" >> $GITHUB_OUTPUT
 
     - name: Setup - vsce
       run: yarn global add vsce
 
+    - name: Verify that VSCE_PAT is correct
+      run: vsce verify-pat rszyma
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
+
     - name: Build and publish
-      run: just pre_release ${{ steps.new-version.outputs.value }}
+      run: |
+        make package
+        just pre_release ${{ steps.new_version.outputs.value }}
       env:
         VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}

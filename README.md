@@ -7,6 +7,10 @@
 
 A VS Code extension that adds language support for [kanata](https://github.com/jtroo/kanata) configuration files.
 
+This extension aims to stay up-to-date with latest kanata git.
+Whenever something changes in `parser` folder in kanata repository, at the end of the day,
+Github Actions will automatically build a new version this extension with updated parser.
+
 ## Features
 
 Kanata config files are detected by `.kbd` file extension.
@@ -23,10 +27,6 @@ Config will be parsed and validated, when saving document.
 
 <p><img src="assets/config-parsing-showcase.gif"/></p>
 
-Note: kanata parser is embedded directly in this extension, so it might happen
-that this extension don't yet support the latest features of kanata. Version bumps of
-kanata are usually done every release and indicated in [change log](/CHANGELOG.md).
-
 ### Support for including other files
 
 If you use [`include`](https://github.com/jtroo/kanata/blob/main/docs/config.adoc#include-other-files)
@@ -42,7 +42,7 @@ there's a handy command palette entry:
 
 ## Contributing
 
-Contributions are welcome, feel free to open an issue or a PR.
+If you have an idea what could be improved, feel free to open an issue or a PR.
 
 ### Bug reports
 

@@ -9,7 +9,7 @@ A VS Code extension that adds language support for [kanata](https://github.com/j
 
 This extension aims to stay up-to-date with latest kanata git.
 Whenever something changes in `parser` folder in kanata repository, at the end of the day,
-Github Actions will automatically build a new version this extension with updated parser.
+Github Actions will automatically build a new version of this extension with updated parser.
 
 ## Features
 

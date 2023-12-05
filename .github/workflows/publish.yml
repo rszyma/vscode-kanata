@@ -1,8 +1,6 @@
 name: publish
 
 on:
-  schedule:
-    - cron: '30 5 * * *' # every day at 5:30 AM
   workflow_dispatch:
 
 env:
@@ -27,18 +25,9 @@ jobs:
     - name: Setup - just
       uses: taiki-e/install-action@just
 
-    - name: Check for new commits in kanata/parser
-      working-directory:
-        ./kanata
-      run: |
-        if git diff --quiet origin/main -- parser; then
-          # no new commits, skip release.
-          # todo: instead of canceling, pass, but without running remaining steps.
-          gh run cancel ${{ github.run_id }}
-          gh run watch ${{ github.run_id }}
-        fi
-
     - name: Try bump kanata
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         status=$(just bump_kanata > /dev/null 2>&1; echo $?)
         if [ $status -eq 0 ]; then
@@ -51,8 +40,6 @@ jobs:
           echo "Failed with $status"
           exit 1
         fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Setup - cargo cache
       uses: actions/cache@v3
@@ -94,13 +81,13 @@ jobs:
       run: yarn global add vsce
 
     - name: Verify that VSCE_PAT is correct
-      run: vsce verify-pat rszyma
       env:
         VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
+      run: vsce verify-pat rszyma
 
     - name: Build and publish
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
       run: |
         make package
         just release ${{ steps.new_version.outputs.value }}
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}

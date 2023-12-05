@@ -1,0 +1,30 @@
+name: trigger
+
+on:
+  schedule:
+    - cron: '30 5 * * *' # every day at 5:30 AM
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Check for new commits in kanata/parser
+      working-directory:
+        ./kanata
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if git diff --quiet origin/main -- parser; then
+          echo "no new commits, skip release"
+        else
+          gh workflow run publish.yml
+        fi

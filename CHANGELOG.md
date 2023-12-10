@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* Added macOS support (syntax highlighing for new keywords and `localKeysVariant` `deflocal-keys-macos` variant)
 * Updated kanata to [568a0c8](https://github.com/jtroo/kanata/tree/568a0c8)
 
 ### 0.4.4

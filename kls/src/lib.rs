@@ -45,6 +45,7 @@ impl Kanata {
                 kanata_parser::keys::Platform::Win
             }
             DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
+            DefLocalKeysVariant::MacOS => kanata_parser::keys::Platform::Macos,
             DefLocalKeysVariant::NotSet => unreachable!(),
         };
         Self {
@@ -170,6 +171,8 @@ enum DefLocalKeysVariant {
     Wintercept,
     #[serde(rename = "deflocalkeys-linux")]
     Linux,
+    #[serde(rename = "deflocalkeys-macos")]
+    MacOS,
 }
 
 impl Display for DefLocalKeysVariant {
@@ -179,6 +182,7 @@ impl Display for DefLocalKeysVariant {
             DefLocalKeysVariant::Win => f.write_str("deflocalkeys-win"),
             DefLocalKeysVariant::Wintercept => f.write_str("deflocalkeys-wintercept"),
             DefLocalKeysVariant::Linux => f.write_str("deflocalkeys-linux"),
+            DefLocalKeysVariant::MacOS => f.write_str("deflocalkeys-macos"),
         }
     }
 }

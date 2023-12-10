@@ -86,7 +86,8 @@
           "enum": [
             "deflocalkeys-win",
             "deflocalkeys-wintercept",
-            "deflocalkeys-linux"
+            "deflocalkeys-linux",
+            "deflocalkeys-macos"
           ],
           "default": "not-set",
           "markdownDescription": "Select which localkeys variant to use."

@@ -18,13 +18,13 @@ jobs:
         submodules: recursive
 
     - name: Check for new commits in kanata/parser
-      working-directory:
-        ./kanata
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        cd ./kanata
         if git diff --quiet origin/main -- parser; then
           echo "no new commits, skip release"
         else
+          cd ..
           gh workflow run publish.yml
         fi

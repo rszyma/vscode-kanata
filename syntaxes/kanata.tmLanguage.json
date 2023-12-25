@@ -29,7 +29,7 @@
         },
         {
             "_description": "defcfg options",
-            "match": "(?:\\s|[()])(sequence-timeout|sequence-input-mode|linux-dev|linux-dev-names-include|linux-dev-names-exclude|linux-unicode-u-code|linux-unicode-termination|linux-x11-repeat-delay-rate|windows-altgr|windows-interception-mouse-hwid|macos-dev-names-include|process-unmapped-keys|danger-enable-cmd|sequence-backtrack-modcancel|log-layer-changes|delegate-to-first-layer|linux-continue-if-no-devs-found|movemouse-inherit-accel-state|movemouse-smooth-diagonals|dynamic-macro-max-presses)(?=\\s|[()])",
+            "match": "(?:\\s|[()])(sequence-timeout|sequence-input-mode|linux-dev|linux-dev-names-include|linux-dev-names-exclude|linux-unicode-u-code|linux-unicode-termination|linux-x11-repeat-delay-rate|windows-altgr|windows-interception-mouse-hwid|macos-dev-names-include|process-unmapped-keys|danger-enable-cmd|sequence-backtrack-modcancel|log-layer-changes|delegate-to-first-layer|linux-continue-if-no-devs-found|movemouse-inherit-accel-state|movemouse-smooth-diagonals|dynamic-macro-max-presses|concurrent-tap-hold)(?=\\s|[()])",
             "captures": {
                 "1": {
                     "name": "constant.language.kanata"

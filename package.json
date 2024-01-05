@@ -89,7 +89,7 @@
             "deflocalkeys-linux",
             "deflocalkeys-macos"
           ],
-          "default": "not-set",
+          "default": "auto",
           "markdownDescription": "Select which localkeys variant to use."
         }
       }

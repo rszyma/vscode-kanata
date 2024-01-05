@@ -6,7 +6,7 @@
 
 ### 0.6.0
 
-* no changes yet
+* Added a simple OS-based autodetection for `localKeysVariant` setting
 
 ### 0.5.6
 

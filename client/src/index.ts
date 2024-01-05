@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
+import { platform } from 'os';
 
 import { join } from 'path';
 
@@ -137,9 +138,7 @@ class Extension implements Disposable {
       transport: TransportKind.ipc,
     };
 
-    const localKeysVariant = workspace
-      .getConfiguration()
-      .get<string>('vscode-kanata.localKeysVariant', '');
+    const localKeysVariant = getLocalKeysVariant();
 
     const clientOpts: LanguageClientOptions = {
       documentSelector: [
@@ -156,7 +155,7 @@ class Extension implements Disposable {
         includesAndWorkspaces: workspace
           .getConfiguration()
           .get<string>('vscode-kanata.includesAndWorkspaces', ''),
-        localKeysVariant: localKeysVariant,
+        localKeysVariant: localKeysVariant as string,
       },
     };
 
@@ -171,14 +170,6 @@ class Extension implements Disposable {
     } else {
       // When file is opened in non-workspace mode, vscode will automatically
       // call textDocument/didOpen, so no need to do anything here.
-    }
-
-    if (localKeysVariant === 'not-set') {
-      showLocalkeysNotSetNotification()
-        .then(null)
-        .catch(e => {
-          outputChannel.appendLine(`error: ${e}`);
-        });
     }
   }
 
@@ -223,19 +214,47 @@ async function openDocument(uri: Uri) {
   await workspace.openTextDocument(uri);
 }
 
-async function showLocalkeysNotSetNotification() {
+async function showLocalkeysManualInterventionNeeded() {
   const message =
-    'Please go to vscode settings and select `deflocalkeys` variant you want to use.';
+    "Cannot select `deflocalkeys` variant automatically. Please go to extension settings and select it manually.";
   const openSettingsAction: MessageActionItem = { title: 'Open Settings' };
 
   await window
     .showInformationMessage(message, openSettingsAction)
-    .then(async selectedAction => {
+    .then(async (selectedAction) => {
       if (selectedAction === openSettingsAction) {
         await commands.executeCommand(
           'workbench.action.openSettings',
-          'vscode-kanata.localKeysVariant'
+          'vscode-kanata.localKeysVariant',
         );
       }
     });
+}
+
+type LocalKeysVariant = 'deflocalkeys-win' | 'deflocalkeys-wintercept' | 'deflocalkeys-linux' | 'deflocalkeys-macos';
+
+// Gets localkeys variant from config and when set to auto, detects it based on current OS.
+function getLocalKeysVariant(): LocalKeysVariant {
+  const localKeysVariant = workspace
+    .getConfiguration()
+    .get<string>('vscode-kanata.localKeysVariant', '');
+
+  if (localKeysVariant == 'auto') {
+    switch (platform()) {
+      case 'linux':
+        return 'deflocalkeys-linux';
+      case 'darwin':
+        return 'deflocalkeys-macos';
+      default: // Catches both unsupported systems as well as windows, since there are 2 possible variants for windows.
+        showLocalkeysManualInterventionNeeded()
+          .then(null)
+          .catch((e) => {
+            outputChannel.appendLine(`error: ${e}`);
+          });
+        // Use 'deflocalkeys-win' as a fallback, since that's the most common variant, I guess.
+        return 'deflocalkeys-win'
+    }
+  }
+
+  return localKeysVariant as LocalKeysVariant;
 }

@@ -46,7 +46,6 @@ impl Kanata {
             }
             DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
             DefLocalKeysVariant::MacOS => kanata_parser::keys::Platform::Macos,
-            DefLocalKeysVariant::NotSet => unreachable!(),
         };
         Self {
             def_local_keys_variant_to_apply: def_local_keys_variant_to_apply.to_string(),
@@ -163,8 +162,6 @@ enum IncludesAndWorkspaces {
 
 #[derive(Debug, Deserialize, Clone, Copy)]
 enum DefLocalKeysVariant {
-    #[serde(rename = "not-set")]
-    NotSet,
     #[serde(rename = "deflocalkeys-win")]
     Win,
     #[serde(rename = "deflocalkeys-wintercept")]
@@ -178,7 +175,6 @@ enum DefLocalKeysVariant {
 impl Display for DefLocalKeysVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DefLocalKeysVariant::NotSet => f.write_str("not-set"),
             DefLocalKeysVariant::Win => f.write_str("deflocalkeys-win"),
             DefLocalKeysVariant::Wintercept => f.write_str("deflocalkeys-wintercept"),
             DefLocalKeysVariant::Linux => f.write_str("deflocalkeys-linux"),
@@ -250,11 +246,7 @@ impl KanataLanguageServer {
 
         Self {
             documents: BTreeMap::new(),
-            kanata: Kanata::new(match config.def_local_keys_variant {
-                // use windows localkeys as fallback
-                DefLocalKeysVariant::NotSet => DefLocalKeysVariant::Win,
-                x => x,
-            }),
+            kanata: Kanata::new(config.def_local_keys_variant),
             workspace_options: config.into(),
             root: root_uri,
             send_diagnostics_callback: send_diagnostics_callback.clone(),

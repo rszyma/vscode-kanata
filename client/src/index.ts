@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
+
 import { platform } from 'os';
 
 import { join } from 'path';
@@ -41,7 +42,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
         await cfg.update(
           'vscode-kanata.mainConfigFile',
           fileName,
-          ConfigurationTarget.Workspace
+          ConfigurationTarget.Workspace,
         );
         // await window.showInformationMessage(
         //   `Set vscode-kanata.mainConfigFile to ${fileName}`
@@ -49,7 +50,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
       } else {
         await window.showErrorMessage('No active editor');
       }
-    }
+    },
   );
   ctx.subscriptions.push(cmd1);
 
@@ -74,7 +75,7 @@ class Extension implements Disposable {
     this.ctx = ctx;
 
     this.ctx.subscriptions.push(
-      workspace.onDidChangeConfiguration(this.restart())
+      workspace.onDidChangeConfiguration(this.restart()),
     );
   }
 
@@ -84,14 +85,14 @@ class Extension implements Disposable {
     if (openedWorkspaces) {
       if (openedWorkspaces.length >= 2) {
         await window.showInformationMessage(
-          'Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.'
+          'Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.',
         );
       }
       root = openedWorkspaces.at(0);
     }
 
     outputChannel.appendLine(
-      `starting with ${openedWorkspaces?.length || 0} opened workspaces`
+      `starting with ${openedWorkspaces?.length || 0} opened workspaces`,
     );
 
     await this.startClient(root);
@@ -115,13 +116,13 @@ class Extension implements Disposable {
         kanataFilesInFolderPattern(root.uri),
         true, // ignoreCreateEvents
         true, // ignoreChangeEvents
-        false // ignoreDeleteEvents
+        false, // ignoreDeleteEvents
       );
       changeWatcher = workspace.createFileSystemWatcher(
         kanataFilesInFolderPattern(root.uri),
         false, // ignoreCreateEvents
         false, // ignoreChangeEvents
-        true // ignoreDeleteEvents
+        true, // ignoreDeleteEvents
       );
 
       // Clean up watchers when extension is deactivated.
@@ -183,14 +184,14 @@ class Extension implements Disposable {
         await this.start();
       } else {
         outputChannel.appendLine(
-          "Settings changed but vscode-kanata configuration hasn't changed"
+          "Settings changed but vscode-kanata configuration hasn't changed",
         );
       }
     };
   }
 
   dispose() {
-    this.toDisposeOnRestart.forEach(disposable => {
+    this.toDisposeOnRestart.forEach((disposable) => {
       disposable.dispose();
     });
   }

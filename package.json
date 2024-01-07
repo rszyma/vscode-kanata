@@ -29,6 +29,14 @@
   "activationEvents": [
     "workspaceContains:**/*.kbd"
   ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": true
+    },
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
   "contributes": {
     "languages": [
       {

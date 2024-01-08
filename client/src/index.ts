@@ -266,7 +266,6 @@ interface FormatterSettings {
   enable: boolean;
 }
 
-// Gets localkeys variant from config and when set to auto, detects it based on current OS.
 function getFormatterSettings(): FormatterSettings {
   const formatSettings = workspace
     .getConfiguration()
@@ -280,5 +279,3 @@ function getFormatterSettings(): FormatterSettings {
 
   return formatSettings;
 }
-
-

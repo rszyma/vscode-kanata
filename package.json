@@ -14,7 +14,8 @@
   ],
   "categories": [
     "Programming Languages",
-    "Other"
+    "Other",
+    "Formatters"
   ],
   "repository": {
     "type": "git",
@@ -99,6 +100,11 @@
           ],
           "default": "auto",
           "markdownDescription": "Select which localkeys variant to use."
+        },
+        "vscode-kanata.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable formatting feature"
         }
       }
     }

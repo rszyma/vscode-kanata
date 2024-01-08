@@ -4,7 +4,12 @@ _default:
 install:
     git submodule update
     make package
-    code --install-extension kanata.vsix
+    code --install-extension kanata.vsix --force
+
+install_release:
+    git submodule update
+    make CARGO_FLAGS=--release package
+    code --install-extension kanata.vsix --force
 
 # Creates a commit, that updates kanata to latest git and adds notice about it to CHANGELOG.md
 bump_kanata:

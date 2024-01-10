@@ -1,19 +1,12 @@
-use crate::log;
-use kanata_parser::cfg::{
-    sexpr::{self, Position, SExpr, SExprMetaData, Span, Spanned},
-    ParseError,
-};
-use std::{borrow::BorrowMut, collections::HashMap};
-use wasm_bindgen::prelude::*;
-
 pub mod ext_tree;
 use ext_tree::*;
 
 mod remove_excessive_newlines;
+mod use_defsrc_layout_on_deflayers;
 
 pub struct Formatter {
     // Additional options
-    pub extension_options: crate::ExtensionFormatterOptions,
+    pub options: crate::ExtensionFormatterOptions,
 
     pub remove_extra_empty_lines: bool,
 }
@@ -22,11 +15,14 @@ impl Formatter {
     /// Transforms [`ExtParseTree`] to another [`ExtParseTree`] in-place,
     /// applying selected formatting funtions depending on [`FormatterOptions`].
     pub fn format(&self, tree: &mut ExtParseTree) {
-        if !self.extension_options.enable {
+        if !self.options.enable {
             return;
         }
         if self.remove_extra_empty_lines {
             tree.0.remove_excessive_adjacent_newlines(2);
+        }
+        if self.options.use_defsrc_layout_on_deflayers {
+            tree.use_defsrc_layout_on_deflayers()
         }
     }
 

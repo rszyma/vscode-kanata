@@ -19,7 +19,20 @@ pub enum ParseTreeNode {
     Atom(String),
     LineComment(String),
     BlockComment(String),
+    /// Besides normal use of `Whitespace` items, additional "empty" `Whitespace`s are
+    /// generated before a `List` node and as a first node inside `List`s (except root list),
+    /// and they are generated, so formatter can run more efficiently.
     Whitespace(String),
+}
+
+impl ParseTreeNode {
+    pub fn width(&self) -> usize {
+        match self {
+            Self::List(xs) => xs.iter().fold(2, |acc, node| acc + node.width()),
+            Self::Atom(x) | Self::BlockComment(x) | Self::Whitespace(x) => x.chars().count(),
+            Self::LineComment(x) => x.chars().count() + 1,
+        }
+    }
 }
 
 /// Parses config from text and combines both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
@@ -106,7 +119,15 @@ pub fn parse_into_ext_tree_and_root_span(
                         };
                     }
                     SExpr::List(_) => {
-                        tree.append(tree_depth, ParseTreeNode::List(vec![]));
+                        // Push empty Whitespace before a new List and another one
+                        // as the first list item, as an optitmization to formatter.
+                        // tree.append(tree_depth, ParseTreeNode::Whitespace("".to_string()));
+                        tree.append(
+                            tree_depth,
+                            ParseTreeNode::List(vec![
+                                // ParseTreeNode::Whitespace("".to_string())
+                            ]),
+                        );
                         tree_depth += 1;
                         expr_path.push(0);
                     }
@@ -165,7 +186,7 @@ impl ParseTreeNode {
         let mut head: &ParseTreeNode = self;
         for i in at_path {
             if let ParseTreeNode::List(l) = head {
-                head = match &l.get(*i) {
+                head = match l.get(*i) {
                     Some(x) => x,
                     None => return None,
                 };
@@ -174,6 +195,36 @@ impl ParseTreeNode {
             }
         }
         Some(head)
+    }
+
+    pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
+        let mut head: &mut ParseTreeNode = self;
+        for i in at_path {
+            if let ParseTreeNode::List(l) = head {
+                head = match l.get_mut(*i) {
+                    Some(x) => x,
+                    None => return None,
+                };
+            } else {
+                panic!("invalid tree path")
+            }
+        }
+        Some(head)
+    }
+
+    pub fn unwrap_list(&self) -> &Vec<Self> {
+        match self {
+            Self::List(list) => list,
+            _ => panic!("not a list"),
+        }
+    }
+
+    // Panics if the variant is not List.
+    pub fn unwrap_list_mut(&mut self) -> &mut Vec<Self> {
+        match self {
+            Self::List(list) => list,
+            _ => panic!("not a list"),
+        }
     }
 }
 
@@ -200,6 +251,30 @@ impl ExtParseTree {
     /// If any step is out-of-bounds, return None.
     pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
         return self.0.get_node(at_path);
+    }
+
+    pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
+        return self.0.get_node_mut(at_path);
+    }
+
+    fn width(&self) -> usize {
+        self.unwrap_list()
+            .iter()
+            .fold(0, |acc, node| acc + node.width())
+    }
+
+    pub fn unwrap_list(&self) -> &Vec<ParseTreeNode> {
+        match &self.0 {
+            ParseTreeNode::List(list) => list,
+            _ => panic!("not a list"),
+        }
+    }
+
+    pub fn unwrap_list_mut(&mut self) -> &mut Vec<ParseTreeNode> {
+        match &mut self.0 {
+            ParseTreeNode::List(list) => list,
+            _ => panic!("not a list"),
+        }
     }
 }
 
@@ -296,7 +371,7 @@ mod tests {
 
     macro_rules! List {
         ($($element:expr),*) => {{
-            ParseTreeNode::List(vec![$($element),*])
+            ParseTreeNode::List(vec![ParseTreeNode::Whitespace("".to_string()), $($element),*])
         }};
     }
 
@@ -304,7 +379,19 @@ mod tests {
     fn test_macros() {
         use ParseTreeNode::*;
         assert_eq!(Tree!(), ExtParseTree(List(vec![])));
-        assert_eq!(Tree!(List!()), ExtParseTree(List(vec![List(vec![])])));
+
+        #[rustfmt::skip]
+        assert_eq!(
+            Tree!(
+                List!()
+            ),
+            ExtParseTree(List(vec![
+                List(vec![
+                    Whitespace("".to_string())
+                ])
+            ]))
+        );
+
         assert_eq!(
             Tree!(
                 Atom!("test"),
@@ -334,19 +421,27 @@ mod tests {
             ),
             (
                 "()",
-                Tree!(List!())
+                Tree!(
+                    Whitespace!(""),
+                    List!()
+                )
             ),
             (
                 "(atom)",
-                Tree!(List!(Atom!("atom")))
+                Tree!(
+                    Whitespace!(""),
+                    List!(Atom!("atom"))
+                )
             ),
             (
                 "( test)(1 \n\t 2)",
                 Tree!(
+                    Whitespace!(""),
                     List!(
                         Whitespace!(" "),
                         Atom!("test")
                     ),
+                    Whitespace!(""),
                     List!(
                         Atom!("1"),
                         Whitespace!(" \n\t "),
@@ -361,6 +456,7 @@ mod tests {
             (
                 "(1 2 #|block|# 3)",
                 Tree!(
+                    Whitespace!(""),
                     List!(
                         Atom!("1"),
                         Whitespace!(" "),
@@ -375,6 +471,7 @@ mod tests {
             (
                 "(1\n)",
                 Tree!(
+                    Whitespace!(""),
                     List!(
                         Atom!("1"),
                         Whitespace!("\n")
@@ -385,6 +482,7 @@ mod tests {
                 "\n(1\n) \n ;; comment \n\t (2) ",
                 Tree!(
                     Whitespace!("\n"),
+                    Whitespace!(""),
                     List!(
                         Atom!("1"),
                         Whitespace!("\n")
@@ -392,6 +490,7 @@ mod tests {
                     Whitespace!(" \n "),
                     LineComment!(";; comment \n"),
                     Whitespace!("\t "),
+                    Whitespace!(""),
                     List!(
                         Atom!("2")
                     ),
@@ -410,6 +509,27 @@ mod tests {
                 case,
                 "<ExtParseTree>.to_string()"
             );
+        }
+    }
+
+    #[test]
+    fn test_node_width() {
+        let cases = vec![
+            ("", 0),
+            ("\n", 1),
+            ("( )", 3),
+            ("(23456789)", 10),
+            ("(()())", 6),
+            ("((34)(78))", 10),
+            (";;bird", 7), // 2 for comment token + 4 for "bird" + 1 for newline
+            ("#|hello|#", 9),
+        ];
+        for (case, expected_result) in cases {
+            log!("===========================");
+            log!("case: {}", case);
+            let tree = parse_into_ext_tree(case).expect("parses");
+            let actual_result = tree.width();
+            assert_eq!(actual_result, expected_result, "tree node span");
         }
     }
 }

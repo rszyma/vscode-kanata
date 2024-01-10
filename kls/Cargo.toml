@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 bench = false
 
 [dependencies]
-kanata-parser = { path = "../kanata/parser", features = ["cmd"]}
+kanata-parser = { path = "../kanata-local/parser", features = ["cmd"]}
 
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.53"

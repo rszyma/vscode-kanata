@@ -105,6 +105,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable formatting feature"
+        },
+        "vscode-kanata.format.useDefsrcLayoutOnDeflayers": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Applies spacial layout of `defsrc` to all `deflayer`s."
         }
       }
     }

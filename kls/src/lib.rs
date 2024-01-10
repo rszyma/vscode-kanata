@@ -205,8 +205,11 @@ impl From<Config> for WorkspaceOptions {
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+// "interface FormatterSettings" in TS server.
 pub struct ExtensionFormatterOptions {
     enable: bool,
+    use_defsrc_layout_on_deflayers: bool,
 }
 
 #[wasm_bindgen]
@@ -258,7 +261,7 @@ impl KanataLanguageServer {
             documents: BTreeMap::new(),
             kanata: Kanata::new(config.def_local_keys_variant),
             formatter: Formatter {
-                extension_options: config.format,
+                options: config.format,
                 remove_extra_empty_lines: true,
             },
             workspace_options: config.into(),

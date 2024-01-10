@@ -264,6 +264,7 @@ function getLocalKeysVariant(): LocalKeysVariant {
 
 interface FormatterSettings {
   enable: boolean;
+  useDefsrcLayoutOnDeflayers: boolean;
 }
 
 function getFormatterSettings(): FormatterSettings {

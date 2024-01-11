@@ -19,7 +19,7 @@ impl Formatter {
             return;
         }
         if self.remove_extra_empty_lines {
-            tree.0.remove_excessive_adjacent_newlines(2);
+            tree.remove_excessive_adjacent_newlines(2);
         }
         if self.options.use_defsrc_layout_on_deflayers {
             tree.use_defsrc_layout_on_deflayers()

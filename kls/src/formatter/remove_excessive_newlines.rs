@@ -2,18 +2,50 @@ use std::borrow::BorrowMut;
 
 use super::ext_tree::*;
 
-impl ParseTreeNode {
+impl ExtParseTree {
     /// Removes excessive adjacent newlines after `max` number of newlines.
     /// Depends on whitespace removal at ends of lines to work correctly.
     /// Otherwise it might look like it didn't remove some excessive newlines.
     pub fn remove_excessive_adjacent_newlines(&mut self, max: usize) {
-        match self.borrow_mut() {
-            ParseTreeNode::List(list) => {
-                for node in list {
-                    node.remove_excessive_adjacent_newlines(max);
+        self.0.remove_excessive_adjacent_newlines(max);
+    }
+}
+
+impl NodeList {
+    fn remove_excessive_adjacent_newlines(&mut self, max: usize) {
+        match self {
+            NodeList::NonEmptyList(parse_trees) => {
+                for tree in parse_trees {
+                    tree.remove_excessive_adjacent_newlines(max);
                 }
             }
-            ParseTreeNode::Whitespace(x) => loop {
+            NodeList::EmptyList(metadatas) => {
+                for metadata in metadatas {
+                    metadata.remove_excessive_adjacent_newlines(max);
+                }
+            }
+        }
+    }
+}
+
+impl ParseTreeNode {
+    fn remove_excessive_adjacent_newlines(&mut self, max: usize) {
+        for metadata in &mut self.pre_metadata {
+            metadata.remove_excessive_adjacent_newlines(max);
+        }
+        if let Expr::List(list) = &mut self.expr {
+            list.remove_excessive_adjacent_newlines(max)
+        }
+        for metadata in &mut self.post_metadata {
+            metadata.remove_excessive_adjacent_newlines(max);
+        }
+    }
+}
+
+impl Metadata {
+    fn remove_excessive_adjacent_newlines(&mut self, max: usize) {
+        if let Metadata::Whitespace(x) = self.borrow_mut() {
+            loop {
                 let mut consecutive_newlines: usize = 0;
                 let mut replace_at_index: Option<usize> = None;
                 for (i, char) in x.chars().enumerate() {
@@ -36,8 +68,7 @@ impl ParseTreeNode {
                     continue;
                 }
                 break;
-            },
-            _ => {}
+            }
         }
     }
 }
@@ -92,7 +123,8 @@ mod tests {
             log!("==============");
             log!("max: {:?}", max);
             let mut tree = parse_into_ext_tree(case).expect("parses");
-            tree.0.remove_excessive_adjacent_newlines(max);
+            assert_eq!(tree.to_string(), case);
+            tree.remove_excessive_adjacent_newlines(max);
             assert_eq!(tree.to_string(), expected_result);
         }
     }

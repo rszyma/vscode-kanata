@@ -2,36 +2,322 @@ use kanata_parser::cfg::{
     sexpr::{self, Position, SExpr, SExprMetaData, Span, Spanned},
     ParseError,
 };
-use std::{borrow::BorrowMut, fmt::Display};
+use std::fmt::{Debug, Display};
 
-/// Extended Parse Tree.
-/// Let's represent the whole config as a [`ParseTreeNode`].
-/// Root node should be [`ParseTreeNode::List`] containing other top level items.
-/// While [`sexpr::parse_`] can only return [`ParseTreeNode::List`]s as top-level items,
-/// this doesn't change anything in regard to how we use this struct later.
-#[derive(PartialEq, Eq, Debug)]
-pub struct ExtParseTree(pub ParseTreeNode);
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExtParseTree(pub NodeList);
 
-#[derive(PartialEq, Eq, Debug)]
-pub enum ParseTreeNode {
-    List(Vec<ParseTreeNode>),
+impl ExtParseTree {
+    /// Appends Expr to the last node at given `depth`, which is expected
+    /// to be a list (otherwise panics).
+    pub fn push_expr(&mut self, depth: usize, expr: Expr) {
+        let mut head: &mut NodeList = &mut self.0;
+        for _ in 0..depth {
+            let node = match head.last_mut() {
+                Some(x) => x,
+                None => panic!("depth out-of bounds"),
+            };
+            match &mut node.expr {
+                Expr::Atom(_) => {
+                    panic!("last item is not a list!")
+                }
+                Expr::List(xs) => {
+                    head = xs;
+                }
+            }
+        }
+        head.push(ParseTreeNode::without_metadata(expr));
+    }
 
-    Atom(String),
+    /// Appends Metadata to the last node at given `depth`, which is
+    /// expected to be a list (otherwise panics).
+    pub fn push_metadata(&mut self, depth: usize, metadata: Metadata) {
+        let mut head: &mut NodeList = &mut self.0;
+        for _ in 0..depth {
+            let node = match head.last_mut() {
+                Some(x) => x,
+                None => panic!("depth out-of bounds"),
+            };
+            match &mut node.expr {
+                Expr::Atom(_) => {
+                    panic!("last item is not a list!")
+                }
+                Expr::List(xs) => {
+                    head = xs;
+                }
+            }
+        }
+        match head {
+            NodeList::NonEmptyList(xs) => xs.last_mut().unwrap().post_metadata.push(metadata),
+            NodeList::EmptyList(metadatas) => {
+                metadatas.push(metadata);
+            }
+        }
+    }
+}
+
+impl ExtParseTree {
+    // If any step on path is not List, panic.
+    // If any step is out-of-bounds, return None.
+    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
+    //     if at_path.is_empty() {
+    //         return None;
+    //     }
+    //     return match self.0.get(at_path[0]) {
+    //         Some(x) => x,
+    //         None => return None,
+    //     }
+    //     .get_node(&at_path[1..]);
+    // }
+
+    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
+    //     if at_path.is_empty() {
+    //         return None;
+    //     }
+    //     return match self.0.get(at_path[0]) {
+    //         Some(x) => x,
+    //         None => return None,
+    //     }
+    //     .get_node_mut(&at_path[1..]);
+    // }
+}
+
+impl Display for ExtParseTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.0)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Metadata {
     LineComment(String),
     BlockComment(String),
-    /// Besides normal use of `Whitespace` items, additional "empty" `Whitespace`s are
-    /// generated before a `List` node and as a first node inside `List`s (except root list),
-    /// and they are generated, so formatter can run more efficiently.
     Whitespace(String),
 }
 
-impl ParseTreeNode {
-    pub fn width(&self) -> usize {
+impl Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::List(xs) => xs.iter().fold(2, |acc, node| acc + node.width()),
-            Self::Atom(x) | Self::BlockComment(x) | Self::Whitespace(x) => x.chars().count(),
-            Self::LineComment(x) => x.chars().count() + 1,
+            Metadata::LineComment(x) => write!(f, "{}", x)?,
+            Metadata::BlockComment(x) => write!(f, "{}", x)?,
+            Metadata::Whitespace(x) => write!(f, "{}", x)?,
+        };
+        Ok(())
+    }
+}
+
+impl From<SExprMetaData> for Metadata {
+    fn from(value: SExprMetaData) -> Self {
+        match value {
+            SExprMetaData::LineComment(x) => Metadata::LineComment(x.t),
+            SExprMetaData::BlockComment(x) => Metadata::BlockComment(x.t),
+            SExprMetaData::Whitespace(x) => Metadata::Whitespace(x.t),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum NodeList {
+    NonEmptyList(Vec<ParseTreeNode>),
+    EmptyList(Vec<Metadata>),
+}
+
+impl NodeList {
+    pub fn len(&self) -> usize {
+        match self {
+            NodeList::NonEmptyList(xs) => xs.len(),
+            NodeList::EmptyList(_) => 0,
+        }
+    }
+
+    pub fn push(&mut self, mut node: ParseTreeNode) {
+        let metadata = match self {
+            NodeList::NonEmptyList(xs) => {
+                xs.push(node);
+                return;
+            }
+            NodeList::EmptyList(xs) => xs,
+        };
+        metadata.append(&mut node.pre_metadata);
+        node.pre_metadata = metadata.to_vec();
+        *self = NodeList::NonEmptyList(vec![node]);
+    }
+
+    pub fn last(&self) -> Option<&ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(xs) => xs.last(),
+            NodeList::EmptyList(_) => None,
+        }
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(xs) => xs.last_mut(),
+            NodeList::EmptyList(_) => None,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(xs) => xs.get(index),
+            NodeList::EmptyList(_) => None,
+        }
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(xs) => xs.get_mut(index),
+            NodeList::EmptyList(_) => None,
+        }
+    }
+
+    // Function to create iterator over ParseTreeNode elements in List enum
+    pub fn iter(&self) -> impl Iterator<Item = &'_ ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(nodes) => nodes.iter(),
+            NodeList::EmptyList(_) => [].iter(), // Return an empty iterator for EmptyList
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &'_ mut ParseTreeNode> {
+        match self {
+            NodeList::NonEmptyList(nodes) => nodes.iter_mut(),
+            NodeList::EmptyList(_) => [].iter_mut(), // Return an empty mutable iterator for EmptyList
+        }
+    }
+}
+
+impl Default for NodeList {
+    fn default() -> Self {
+        NodeList::EmptyList(vec![])
+    }
+}
+
+impl Display for NodeList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeList::NonEmptyList(xs) => {
+                for x in xs.iter() {
+                    write!(f, "{}", x)?;
+                }
+            }
+            NodeList::EmptyList(xs) => {
+                for x in xs {
+                    write!(f, "{}", x)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expr {
+    Atom(String),
+    List(NodeList),
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Atom(x) => {
+                write!(f, "{}", x)?;
+            }
+            Expr::List(list) => {
+                write!(f, "({})", list)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseTreeNode {
+    pub pre_metadata: Vec<Metadata>,
+    pub expr: Expr,
+    pub post_metadata: Vec<Metadata>,
+}
+
+impl ParseTreeNode {
+    pub fn without_metadata(expr: Expr) -> ParseTreeNode {
+        ParseTreeNode {
+            pre_metadata: vec![],
+            expr,
+            post_metadata: vec![],
+        }
+    }
+}
+
+impl ParseTreeNode {
+    // If any step on path is not List, panic.
+    // If any step is out-of-bounds, return None.
+    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
+    //     let mut head: &ParseTreeNode = self;
+    //     for i in at_path {
+    //         if let ParseTreeNode::List(l) = head {
+    //             head = match l.get(*i) {
+    //                 Some(x) => x,
+    //                 None => return None,
+    //             };
+    //         } else {
+    //             panic!("invalid tree path")
+    //         }
+    //     }
+    //     Some(head)
+    // }
+
+    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
+    //     let mut head: &mut ParseTreeNode = self;
+    //     for i in at_path {
+    //         if let ParseTreeNode::List(l) = head {
+    //             head = match l.get_mut(*i) {
+    //                 Some(x) => x,
+    //                 None => return None,
+    //             };
+    //         } else {
+    //             panic!("invalid tree path")
+    //         }
+    //     }
+    //     Some(head)
+    // }
+
+    // Panics if the variant is not List.
+    // pub fn unwrap_list(&self) -> &NodeList {
+    //     match &self.expr {
+    //         Expr::List(list) => list,
+    //         _ => panic!("not a list"),
+    //     }
+    // }
+
+    // // Panics if the variant is not List.
+    // pub fn unwrap_list_mut(&mut self) -> &mut NodeList {
+    //     match &mut self.expr {
+    //         Expr::List(list) => list,
+    //         _ => panic!("not a list"),
+    //     }
+    // }
+}
+
+impl Display for ParseTreeNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ParseTreeNode {
+            pre_metadata,
+            expr,
+            post_metadata,
+        } = self;
+
+        for metadata in pre_metadata {
+            write!(f, "{}", metadata)?;
+        }
+
+        write!(f, "{}", expr)?;
+
+        for metadata in post_metadata {
+            write!(f, "{}", metadata)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -68,16 +354,24 @@ pub fn parse_into_ext_tree_and_root_span(
     let filename = "";
     let (exprs, exprs_ext) = sexpr::parse_(src, filename, false)?;
     let exprs: Vec<SExpr> = exprs.into_iter().map(SExpr::List).collect();
-    let position_end = exprs.last().map(|x| x.span().end).unwrap_or_default();
+    let exprs_len = exprs.len();
+    let last_sexpr_end = exprs.last().map(|x| x.span().end).unwrap_or_default();
+    let last_metadata_end = exprs_ext.last().map(|x| x.span().end).unwrap_or_default();
     let root_span = CustomSpan {
         start: Position::default(),
-        end: position_end,
+        end: {
+            if last_sexpr_end.absolute > last_metadata_end.absolute {
+                last_sexpr_end
+            } else {
+                last_metadata_end
+            }
+        },
         file_name: filename.to_string(),
         file_content: src,
     };
     let exprs = {
         let mut r = SExpr::List(Spanned::new(
-            Vec::with_capacity(exprs.len()),
+            Vec::with_capacity(exprs_len),
             root_span.clone().into(),
         ));
         for x in exprs {
@@ -91,8 +385,8 @@ pub fn parse_into_ext_tree_and_root_span(
     // crate::log!("sexprs: {:?}", sexprs);
 
     let mut metadata_iter = exprs_ext.into_iter().peekable();
-    let mut tree: ExtParseTree = ExtParseTree(ParseTreeNode::List(vec![]));
-    let mut tree_depth: u8 = 0; // currentdepth of the list we're currently appending to in `tree`.
+    let mut tree: ExtParseTree = ExtParseTree(NodeList::default());
+    let mut tree_depth: usize = 0; // currentdepth of the list we're currently appending to in `tree`.
     let mut expr_path: Vec<usize> = vec![0]; // path to the current item in `exprs` tree.
     loop {
         match exprs.get_node(&expr_path) {
@@ -100,34 +394,19 @@ pub fn parse_into_ext_tree_and_root_span(
                 while let Some(metadata) =
                     metadata_iter.next_if(|m| m.span().start() < expr.span().start())
                 {
-                    tree.append(
-                        tree_depth,
-                        match metadata {
-                            SExprMetaData::LineComment(m) => ParseTreeNode::LineComment(m.t),
-                            SExprMetaData::BlockComment(m) => ParseTreeNode::BlockComment(m.t),
-                            SExprMetaData::Whitespace(m) => ParseTreeNode::Whitespace(m.t),
-                        },
-                    )
+                    tree.push_metadata(tree_depth, metadata.into());
                 }
 
                 match expr {
                     SExpr::Atom(x) => {
-                        tree.append(tree_depth, ParseTreeNode::Atom(x.t.clone()));
+                        tree.push_expr(tree_depth, Expr::Atom(x.t.clone()));
                         match expr_path.last_mut() {
                             Some(i) => *i += 1,
                             None => unreachable!(),
                         };
                     }
                     SExpr::List(_) => {
-                        // Push empty Whitespace before a new List and another one
-                        // as the first list item, as an optitmization to formatter.
-                        // tree.append(tree_depth, ParseTreeNode::Whitespace("".to_string()));
-                        tree.append(
-                            tree_depth,
-                            ParseTreeNode::List(vec![
-                                // ParseTreeNode::Whitespace("".to_string())
-                            ]),
-                        );
+                        tree.push_expr(tree_depth, Expr::List(NodeList::default()));
                         tree_depth += 1;
                         expr_path.push(0);
                     }
@@ -142,17 +421,11 @@ pub fn parse_into_ext_tree_and_root_span(
                 let expr = exprs
                     .get_node(&expr_path)
                     .expect("should exist, we just iterated over it");
+
                 while let Some(metadata) =
                     metadata_iter.next_if(|m| m.span().start() < expr.span().end())
                 {
-                    tree.append(
-                        tree_depth,
-                        match metadata {
-                            SExprMetaData::LineComment(m) => ParseTreeNode::LineComment(m.t),
-                            SExprMetaData::BlockComment(m) => ParseTreeNode::BlockComment(m.t),
-                            SExprMetaData::Whitespace(m) => ParseTreeNode::Whitespace(m.t),
-                        },
-                    )
+                    tree.push_metadata(tree_depth, metadata.into());
                 }
 
                 match expr_path.last_mut() {
@@ -166,116 +439,10 @@ pub fn parse_into_ext_tree_and_root_span(
 
     // Add remaining metadata.
     for metadata in metadata_iter {
-        tree.append(
-            tree_depth,
-            match metadata {
-                SExprMetaData::LineComment(m) => ParseTreeNode::LineComment(m.t),
-                SExprMetaData::BlockComment(m) => ParseTreeNode::BlockComment(m.t),
-                SExprMetaData::Whitespace(m) => ParseTreeNode::Whitespace(m.t),
-            },
-        )
+        tree.push_metadata(tree_depth, metadata.into());
     }
 
     Ok((tree, root_span))
-}
-
-impl ParseTreeNode {
-    /// If any step on path is not List, panic.
-    /// If any step is out-of-bounds, return None.
-    pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-        let mut head: &ParseTreeNode = self;
-        for i in at_path {
-            if let ParseTreeNode::List(l) = head {
-                head = match l.get(*i) {
-                    Some(x) => x,
-                    None => return None,
-                };
-            } else {
-                panic!("invalid tree path")
-            }
-        }
-        Some(head)
-    }
-
-    pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-        let mut head: &mut ParseTreeNode = self;
-        for i in at_path {
-            if let ParseTreeNode::List(l) = head {
-                head = match l.get_mut(*i) {
-                    Some(x) => x,
-                    None => return None,
-                };
-            } else {
-                panic!("invalid tree path")
-            }
-        }
-        Some(head)
-    }
-
-    pub fn unwrap_list(&self) -> &Vec<Self> {
-        match self {
-            Self::List(list) => list,
-            _ => panic!("not a list"),
-        }
-    }
-
-    // Panics if the variant is not List.
-    pub fn unwrap_list_mut(&mut self) -> &mut Vec<Self> {
-        match self {
-            Self::List(list) => list,
-            _ => panic!("not a list"),
-        }
-    }
-}
-
-impl ExtParseTree {
-    /// Appends `node` to the last node at given `depth`, which is expected
-    /// to be a list (otherwise panics).
-    fn append(&mut self, depth: u8, node: ParseTreeNode) {
-        let mut head: &mut ParseTreeNode = self.0.borrow_mut();
-        for _ in 0..depth {
-            if let ParseTreeNode::List(li) = head {
-                head = li.last_mut().expect("path is valid");
-            } else {
-                panic!("unexpected non-list item")
-            }
-        }
-        if let ParseTreeNode::List(ref mut l) = head {
-            l.push(node);
-        } else {
-            panic!("unexpected non-list item");
-        }
-    }
-
-    /// If any step on path is not List, panic.
-    /// If any step is out-of-bounds, return None.
-    pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-        return self.0.get_node(at_path);
-    }
-
-    pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-        return self.0.get_node_mut(at_path);
-    }
-
-    fn width(&self) -> usize {
-        self.unwrap_list()
-            .iter()
-            .fold(0, |acc, node| acc + node.width())
-    }
-
-    pub fn unwrap_list(&self) -> &Vec<ParseTreeNode> {
-        match &self.0 {
-            ParseTreeNode::List(list) => list,
-            _ => panic!("not a list"),
-        }
-    }
-
-    pub fn unwrap_list_mut(&mut self) -> &mut Vec<ParseTreeNode> {
-        match &mut self.0 {
-            ParseTreeNode::List(list) => list,
-            _ => panic!("not a list"),
-        }
-    }
 }
 
 struct SExprCustom(SExpr);
@@ -299,41 +466,6 @@ impl<'a> SExprCustom {
     }
 }
 
-impl Display for ExtParseTree {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let ParseTreeNode::List(l) = &self.0 {
-            for expr in l {
-                write!(f, "{}", expr)?;
-            }
-        } else {
-            // root node must be a list.
-            return Err(std::fmt::Error);
-        }
-        Ok(())
-    }
-}
-
-impl Display for ParseTreeNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseTreeNode::List(l) => {
-                write!(f, "(")?;
-                for expr in l {
-                    write!(f, "{}", expr)?;
-                }
-                write!(f, ")")?;
-            }
-            ParseTreeNode::Atom(x)
-            | ParseTreeNode::LineComment(x)
-            | ParseTreeNode::BlockComment(x)
-            | ParseTreeNode::Whitespace(x) => {
-                write!(f, "{}", x)?;
-            }
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,160 +473,196 @@ mod tests {
 
     macro_rules! Tree {
         ($($element:expr),*) => {{
-            ExtParseTree(ParseTreeNode::List(vec![$($element),*]))
+            ExtParseTree(NodeList::NonEmptyList(
+                vec![$($element),*]
+            ))
         }};
     }
 
     macro_rules! Atom {
         ($text:expr) => {
-            ParseTreeNode::Atom($text.to_string())
+            Expr::Atom($text.to_string())
         };
     }
 
     macro_rules! LineComment {
         ($text:expr) => {
-            ParseTreeNode::LineComment($text.to_string())
+            Metadata::LineComment($text.to_string())
         };
     }
 
     macro_rules! BlockComment {
         ($text:expr) => {
-            ParseTreeNode::BlockComment($text.to_string())
+            Metadata::BlockComment($text.to_string())
         };
     }
 
     macro_rules! Whitespace {
         ($text:expr) => {
-            ParseTreeNode::Whitespace($text.to_string())
+            Metadata::Whitespace($text.to_string())
         };
     }
 
-    macro_rules! List {
+    macro_rules! NonEmptyList {
         ($($element:expr),*) => {{
-            ParseTreeNode::List(vec![ParseTreeNode::Whitespace("".to_string()), $($element),*])
+            Expr::List(NodeList::NonEmptyList(vec![$($element),*]))
+        }};
+    }
+
+    macro_rules! EmptyList {
+        ($($element:expr),*) => {{
+            Expr::List(NodeList::EmptyList(vec![$($element),*]))
         }};
     }
 
     #[test]
     fn test_macros() {
-        use ParseTreeNode::*;
-        assert_eq!(Tree!(), ExtParseTree(List(vec![])));
+        // use ParseTreeNode::*;
+        // assert_eq!(Tree!(), ExtParseTree(NodeList(vec![])));
 
-        #[rustfmt::skip]
-        assert_eq!(
-            Tree!(
-                List!()
-            ),
-            ExtParseTree(List(vec![
-                List(vec![
-                    Whitespace("".to_string())
-                ])
-            ]))
-        );
+        // assert_eq!(
+        //     Tree!(List!()),
+        //     ExtParseTree(NodeList(vec![NodeList(vec![])]))
+        // );
 
-        assert_eq!(
-            Tree!(
-                Atom!("test"),
-                Whitespace!(" "),
-                LineComment!("# test"),
-                BlockComment!("#| test |#")
-            ),
-            ExtParseTree(List(vec![
-                Atom("test".to_string()),
-                Whitespace(" ".to_string()),
-                LineComment("# test".to_string()),
-                BlockComment("#| test |#".to_string())
-            ]))
-        );
+        // assert_eq!(
+        //     Tree!(
+        //         Atom!("test"),
+        //         Whitespace!(" "),
+        //         LineComment!("# test"),
+        //         BlockComment!("#| test |#")
+        //     ),
+        //     ExtParseTree(NodeList(vec![
+        //         Atom("test".to_string()),
+        //         Whitespace(" ".to_string()),
+        //         LineComment("# test".to_string()),
+        //         BlockComment("#| test |#".to_string())
+        //     ]))
+        // );
     }
 
     #[test]
     fn test_parse_into_ext_tree() {
-        let s = "";
-        assert_eq!(parse_into_ext_tree(s).expect("parses"), Tree!());
-
         #[rustfmt::skip]
         let cases = vec![
             (
                 "",
-                Tree!()
+                ExtParseTree(NodeList::default())
+            ),
+            (
+                "\n",
+                ExtParseTree(NodeList::EmptyList(vec![Whitespace!("\n")]))
             ),
             (
                 "()",
                 Tree!(
-                    Whitespace!(""),
-                    List!()
+                    ParseTreeNode::without_metadata(EmptyList!())
                 )
             ),
             (
                 "(atom)",
                 Tree!(
-                    Whitespace!(""),
-                    List!(Atom!("atom"))
+                    ParseTreeNode::without_metadata(NonEmptyList!(
+                        ParseTreeNode::without_metadata(Atom!("atom"))
+                    ))
                 )
             ),
             (
                 "( test)(1 \n\t 2)",
                 Tree!(
-                    Whitespace!(""),
-                    List!(
-                        Whitespace!(" "),
-                        Atom!("test")
-                    ),
-                    Whitespace!(""),
-                    List!(
-                        Atom!("1"),
-                        Whitespace!(" \n\t "),
-                        Atom!("2")
-                    )
+                    ParseTreeNode::without_metadata(NonEmptyList!(
+                        ParseTreeNode{
+                            pre_metadata: vec![Whitespace!(" ")],
+                            expr: Atom!("test"),
+                            post_metadata: vec![]
+                        }
+                    )),
+                    ParseTreeNode::without_metadata(NonEmptyList!(
+                        ParseTreeNode{
+                            pre_metadata: vec![],
+                            expr: Atom!("1"),
+                            post_metadata: vec![Whitespace!(" \n\t ")],
+                        },
+                        ParseTreeNode::without_metadata(Atom!("2"))
+                    ))
                 )
-            ),
-            (
-                " \n\t \n",
-                Tree!(Whitespace!(" \n\t \n"))
             ),
             (
                 "(1 2 #|block|# 3)",
                 Tree!(
-                    Whitespace!(""),
-                    List!(
-                        Atom!("1"),
-                        Whitespace!(" "),
-                        Atom!("2"),
-                        Whitespace!(" "),
-                        BlockComment!("#|block|#"),
-                        Whitespace!(" "),
-                        Atom!("3")
-                    )
+                    ParseTreeNode::without_metadata(NonEmptyList!(
+                        ParseTreeNode{
+                            pre_metadata: vec![],
+                            expr: Atom!("1"),
+                            post_metadata: vec![Whitespace!(" ")]
+                        },
+                        ParseTreeNode{
+                            pre_metadata: vec![],
+                            expr: Atom!("2"),
+                            post_metadata: vec![
+                                Whitespace!(" "),
+                                BlockComment!("#|block|#"),
+                                Whitespace!(" "),
+                            ],
+                        },
+                        ParseTreeNode::without_metadata(Atom!("3"))
+                    ))
                 )
             ),
             (
                 "(1\n)",
                 Tree!(
-                    Whitespace!(""),
-                    List!(
-                        Atom!("1"),
-                        Whitespace!("\n")
-                    )
+                    ParseTreeNode::without_metadata(NonEmptyList!(
+                        ParseTreeNode{
+                            pre_metadata: vec![],
+                            expr: Atom!("1"),
+                            post_metadata: vec![Whitespace!("\n")]
+                        }
+                    ))
                 )
             ),
             (
                 "\n(1\n) \n ;; comment \n\t (2) ",
+                (
+                    Tree!(
+                        ParseTreeNode{
+                            pre_metadata: vec![Whitespace!("\n")],
+                            expr: NonEmptyList!(
+                                ParseTreeNode{
+                                    pre_metadata: vec![],
+                                    expr: Atom!("1"),
+                                    post_metadata: vec![Whitespace!("\n")]
+                                }
+                            ),
+                            post_metadata: vec![
+                                Whitespace!(" \n "),
+                                LineComment!(";; comment \n"),
+                                Whitespace!("\t ")
+                            ]
+                        },
+                        ParseTreeNode{
+                            pre_metadata: vec![],
+                            expr: NonEmptyList!(
+                                ParseTreeNode::without_metadata(Atom!("2"))
+                            ),
+                            post_metadata: vec![Whitespace!(" ")]
+                        }
+                    )
+                ),
+            ),
+            (   // comment at the end of a file
+                "(123)\n;;",
                 Tree!(
-                    Whitespace!("\n"),
-                    Whitespace!(""),
-                    List!(
-                        Atom!("1"),
-                        Whitespace!("\n")
-                    ),
-                    Whitespace!(" \n "),
-                    LineComment!(";; comment \n"),
-                    Whitespace!("\t "),
-                    Whitespace!(""),
-                    List!(
-                        Atom!("2")
-                    ),
-                    Whitespace!(" ")
+                    ParseTreeNode{
+                        pre_metadata: vec![],
+                        expr: NonEmptyList!(
+                            ParseTreeNode::without_metadata(Atom!("123"))
+                        ),
+                        post_metadata: vec![
+                            Whitespace!("\n"),
+                            LineComment!(";;")
+                        ]
+                    }
                 )
             ),
         ];
@@ -504,32 +672,12 @@ mod tests {
             log!("actual: {:#?}", actual_result);
             log!("expected: {:#?}", expected_result);
             assert_eq!(actual_result, expected_result, "parse_into_ext_tree(case)");
+            log!("actual (string): {:#?}", actual_result.to_string());
             assert_eq!(
                 actual_result.to_string(),
                 case,
                 "<ExtParseTree>.to_string()"
             );
-        }
-    }
-
-    #[test]
-    fn test_node_width() {
-        let cases = vec![
-            ("", 0),
-            ("\n", 1),
-            ("( )", 3),
-            ("(23456789)", 10),
-            ("(()())", 6),
-            ("((34)(78))", 10),
-            (";;bird", 7), // 2 for comment token + 4 for "bird" + 1 for newline
-            ("#|hello|#", 9),
-        ];
-        for (case, expected_result) in cases {
-            log!("===========================");
-            log!("case: {}", case);
-            let tree = parse_into_ext_tree(case).expect("parses");
-            let actual_result = tree.width();
-            assert_eq!(actual_result, expected_result, "tree node span");
         }
     }
 }

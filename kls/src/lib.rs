@@ -262,7 +262,7 @@ impl KanataLanguageServer {
             kanata: Kanata::new(config.def_local_keys_variant),
             formatter: Formatter {
                 options: config.format,
-                remove_extra_empty_lines: true,
+                remove_extra_empty_lines: false,
             },
             workspace_options: config.into(),
             root: root_uri,
@@ -390,6 +390,11 @@ impl KanataLanguageServer {
     #[allow(unused_variables)]
     #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDocumentFormatting)]
     pub fn on_document_formatting(&mut self, params: JsValue) -> JsValue {
+        if !self.formatter.options.enable {
+            log!("Formatting request received, but formatting is disabled in vscode-kanata settings.");
+            return to_value::<Result>(&Some(vec![])).expect("no err");
+        }
+
         type Params = <Formatting as Request>::Params;
         type Result = <Formatting as Request>::Result;
 

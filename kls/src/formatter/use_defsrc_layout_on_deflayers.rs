@@ -4,44 +4,47 @@ use super::ext_tree::*;
 
 impl ExtParseTree {
     // todo: maybe don't format if an atom in defsrc/deflayer is too large.
-    pub fn use_defsrc_layout_on_deflayers(&mut self) {
-        let mut defsrc_node_path: Option<Vec<usize>> = None;
-        let mut deflayer_node_paths: Vec<Vec<usize>> = vec![];
-        for (i, top_level_item) in self.unwrap_list().iter().enumerate() {
-            // Find first list or atom.
-            for node in top_level_item.list_or_default() {
-                match node {
-                    ParseTreeNode::Atom(x) => match x.as_str() {
-                        "defsrc" => match defsrc_node_path {
-                            Some(_) => {
-                                log!(
-                                    "Formatting `deflayer`s failed: config file \
-                                    contains multiple `defsrc` blocks."
-                                );
-                                return;
-                            }
-                            None => {
-                                defsrc_node_path = Some(vec![i]);
-                                break;
-                            }
-                        },
-                        "deflayer" => {
-                            deflayer_node_paths.push(vec![i]);
-                            break;
-                        }
-                        _ => break,
-                    },
-                    ParseTreeNode::BlockComment(_)
-                    | ParseTreeNode::LineComment(_)
-                    | ParseTreeNode::Whitespace(_) => continue,
-                    ParseTreeNode::List(_) => {
-                        break;
+    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self) {
+        let mut defsrc: Option<&'a NodeList> = None;
+        let mut deflayers: Vec<&'a mut NodeList> = vec![];
+
+        for top_level_item in self.0.iter_mut() {
+            let top_level_list = match &mut top_level_item.expr {
+                Expr::Atom(_x) => continue,
+                Expr::List(list) => list,
+            };
+
+            let first_item = match top_level_list.get(0) {
+                Some(x) => x,
+                None => continue,
+            };
+
+            let first_atom = match &first_item.expr {
+                Expr::Atom(x) => x,
+                Expr::List(_) => continue,
+            };
+
+            match first_atom.as_str() {
+                "defsrc" => match defsrc {
+                    Some(_) => {
+                        log!(
+                            "Formatting `deflayer`s failed: config file \
+                                contains multiple `defsrc` definitions."
+                        );
+                        return;
                     }
+                    None => {
+                        defsrc = Some(top_level_list);
+                    }
+                },
+                "deflayer" => {
+                    deflayers.push(top_level_list);
                 }
+                _ => {}
             }
         }
 
-        let defsrc_node_path = if let Some(x) = defsrc_node_path {
+        let defsrc = if let Some(x) = &mut defsrc {
             x
         } else {
             log!(
@@ -52,61 +55,50 @@ impl ExtParseTree {
             return;
         };
 
-        // This no longer needs to be mutable.
-        let deflayer_node_paths = deflayer_node_paths;
-
-        let defsrc_node = self.get_node(&defsrc_node_path).unwrap();
-
         // Get number of atoms from `defsrc` now to prevent additional allocations
         // for `layout` later.
-
-        let defsrc_atom_count: usize = defsrc_node.unwrap_list().iter().fold(0, |acc, node| {
-            if let ParseTreeNode::Atom(_) = node {
-                acc + 1
-            } else {
-                acc
-            }
-        });
+        // -1 because we don't count `defsrc` token.
+        let defsrc_item_count: usize = defsrc.len() - 1;
 
         // Each item in layout is a string that consists only of whitespace characters.
-        let mut layout: Vec<String> = vec![String::with_capacity(10); defsrc_atom_count];
-
-        let mut current_layout_item_index: usize = 0;
+        let mut layout: Vec<String> = vec![String::with_capacity(10); defsrc_item_count];
 
         // Read the layout from `defsrc`
+        for (i, defsrc_item) in defsrc.iter().skip(1).enumerate() {
+            if let Expr::List(_) = defsrc_item.expr {
+                log!(
+                    "Formatting `deflayer`s failed: there shouldn't \
+                    be any lists in `defsrc`."
+                );
+                return;
+            }
 
-        for node in defsrc_node.unwrap_list() {
-            match node {
-                ParseTreeNode::Atom(x) => {
-                    current_layout_item_index += 1;
-                    // If we didn't drop Spanned while merging `SExpr` with `SExprMetaData`
-                    // we could use it to get size, but oh well.
-                    let size = x.chars().count();
-                    // Subtract 1, because atom/list in `deflayer` will always have at
-                    // least 1 width.
-                    for _ in 0..(size - 1) {
-                        layout[current_layout_item_index].push(' ');
+            let defsrc_item_as_str = defsrc_item.expr.to_string();
+
+            for ch in defsrc_item_as_str.chars() {
+                match ch {
+                    '\n' => layout[i].push(ch),
+                    '\t' => layout[i].push(ch),
+                    _ => layout[i].push(' '),
+                }
+            }
+
+            // NOTE: We intentionally process only `post_metadata` and ignore `pre_metadata`.
+            // This should be either fixed later, or we just shouldn't modify `pre_metadata`
+            // in previous operations on tree.
+            for metadata in &defsrc_item.post_metadata {
+                match metadata {
+                    Metadata::LineComment(_) => {
+                        log!("line comments unsupported for now");
+                        return;
                     }
-                }
-                ParseTreeNode::Whitespace(x) => {
-                    layout[current_layout_item_index].push_str(x);
-                }
-                ParseTreeNode::List(_) => {
-                    log!(
-                        "Formatting `deflayer`s failed: there shouldn't \
-                        be any lists in `defsrc`."
-                    );
-                    return;
-                }
-                ParseTreeNode::LineComment(_) => {
-                    // Treat line comment as newline. Since LineComment should
-                    // contain a newline. (or not if at the end of file?).
-                    // But this is inside a top-level block, so it's guaranteed
-                    // that the comment contains a newline.
-                    layout[current_layout_item_index].push('\n');
-                }
-                ParseTreeNode::BlockComment(_) => {
-                    // Nothing special to do here.
+                    Metadata::BlockComment(_) => {
+                        log!("block comments unsupported for now");
+                        return;
+                    }
+                    Metadata::Whitespace(whitespace) => {
+                        layout[i].push_str(whitespace);
+                    }
                 }
             }
         }
@@ -114,107 +106,46 @@ impl ExtParseTree {
         // Layout no longer needs to be mutable.
         let layout = layout;
 
-        // Modify deflayers according to layout.
-
-        'outer: for deflayer_path in deflayer_node_paths {
-            let deflayer_mut = self.get_node_mut(&deflayer_path).unwrap().unwrap_list_mut();
-
-            let deflayer_atom_count: usize = deflayer_mut.iter().fold(0, |acc, node| {
-                if let ParseTreeNode::Atom(_) = node {
-                    acc + 1
-                } else {
-                    acc
-                }
-            });
-
-            if deflayer_atom_count != defsrc_atom_count {
+        // Apply the `defsrc` layout to each `deflayer` block.
+        for deflayer in &mut deflayers.iter_mut() {
+            if deflayer.len() - 2 != defsrc_item_count {
+                let layer_name = deflayer
+                    .get(1)
+                    .map(|f| if let Expr::Atom(x) = &f.expr { x } else { "?" })
+                    .unwrap_or("?");
+                log!(
+                    "Formatting of '{}' deflayer skipped: items count doesn't match defsrc",
+                    layer_name
+                );
                 continue;
             }
 
-            let mut deflayer = deflayer_mut.iter_mut().peekable();
-            let mut deflayer_index = 0;
+            for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
+                let deflayer_item_as_str = deflayer_item.expr.to_string();
 
-            let mut layout = layout.iter();
-            let mut atoms_to_ignore = 2;
+                let layout_size = layout[i].chars().count();
+                let deflayer_item_size = deflayer_item_as_str.chars().count();
 
-            for layout_item in layout.by_ref() {
-                // slot = atom/list + opt<space> + fill_remaining_with_space
-                let minimum_slot_width: usize = layout_item.chars().count();
-                let mut slot_width_occupied: usize = 0;
-
-                let mut layout_item = layout_item.chars();
-
-                'mid: loop {
-                    let node = match deflayer.next_if(|next| {
-                        return if slot_width_occupied >= minimum_slot_width {
-                            match next {
-                                ParseTreeNode::List(_) | ParseTreeNode::Atom(_) => false,
-                                _ => true,
-                            }
-                        } else {
-                            true
-                        };
-                    }) {
-                        Some(x) => x,
-                        None => {
+                // A hacky implementation for now. All comments will be deleted.
+                if deflayer_item_size >= layout_size {
+                    let mut iter = layout[i].chars();
+                    for ch in iter.by_ref() {
+                        if ch == '\n' {
+                            let remainder = "\n".chars().chain(iter.by_ref()).collect();
+                            deflayer_item
+                                .post_metadata
+                                .push(Metadata::Whitespace(remainder));
                             break;
                         }
-                    };
-
-                    let node_width = node.width();
-                    match node {
-                        ParseTreeNode::List(_) | ParseTreeNode::Atom(_) => {
-                            if atoms_to_ignore > 0 {
-                                atoms_to_ignore -= 1;
-                                continue;
-                            }
-                            slot_width_occupied += node_width;
-                        }
-                        ParseTreeNode::Whitespace(x) => {
-                            while let Some(ch) = layout_item.next() {
-                                if slot_width_occupied >= minimum_slot_width {
-                                    if ch == '\n' {
-                                        x.push('\n');
-                                    }
-                                    continue 'mid;
-                                }
-                                x.push(ch);
-                                slot_width_occupied += 1;
-                            }
-                            // let remaining_whitespace_chars
-                            // x.chars().
-                        }
-                        ParseTreeNode::LineComment(_) => {
-                            // don't care about deflayers with line comment for now
-                            // these are really problematic tbh, because we might want to
-                            // insest a neww Whitespace item after it.
-                            return;
-                        }
-                        ParseTreeNode::BlockComment(_) => {
-                            slot_width_occupied += node_width;
-                        }
                     }
+                } else {
+                    // for ch in layout[i].chars().skip(deflayer_item_size) { }
+                    let ret = layout[i].chars().skip(deflayer_item_size).collect();
+                    deflayer_item.post_metadata.clear();
+                    deflayer_item.post_metadata.push(Metadata::Whitespace(ret));
                 }
-
-                if slot_width_occupied < minimum_slot_width {
-                    let remaining = minimum_slot_width - slot_width_occupied;
-                    let mut s = String::with_capacity(remaining);
-                    for _ in 0..remaining {
-                        s.push(' ')
-                    }
-                    deflayer_mut.push(ParseTreeNode::Whitespace(s));
-                }
-            }
-
-            if deflayer.next().is_some() {
-                panic!("items still left in deflayer")
-            }
-            if layout.next().is_some() {
-                panic!("items still left in layout")
             }
         }
-
-        // Apply the `defsrc` layout to each `deflayer` block.
     }
 }
 
@@ -240,46 +171,35 @@ mod tests {
                 "(deflayer base  1 2 )",
             ),
             (
+                // 1 defsrc, 1 deflayer (very simple) - formatting applied
+                "(defsrc 1 2) (deflayer base 3  4)",
+                "(defsrc 1 2) (deflayer base 3 4)",
+            ),
+            (
                 // 1 defsrc, 1 deflayer - formatting applied
-                "(defsrc \n 1  2\n)\
-                 (deflayer base 1 2 )",
-                "(defsrc \n 1  2\n)\
-                 (deflayer base \n 1  2\n)",
+                "(defsrc \n 1  2\n) (deflayer base 3 4 )",
+                "(defsrc \n 1  2\n) (deflayer base 3  4\n)",
             ),
             (
                 // 1 defsrc, 2 deflayers - formatting applied for both deflayers
-                "(defsrc \n 1  2\n)\
-                 (deflayer base 1 2 )\
-                 ( deflayer\n\t layer2 \n\n3   4 )",
-                "(defsrc \n 1  2\n)\
-                 (deflayer base \n 1  2\n)\
-                 (deflayer layer2 \n 3  4\n)",
+                "(defsrc \n 1  2\n) (deflayer base 1 2 ) ( deflayer\n\t layer2 \n\n3  \t  \n  \t4\n )",
+                "(defsrc \n 1  2\n) (deflayer base 1  2\n) ( deflayer\n\t layer2 \n\n3  4\n)",
             ),
             (
                 /*
                 1 defsrc, 1 defalias, 2 deflayers - formatting applied for both deflayers,
                 while defalias should be untouched.
                 */
-                "(defsrc \n 1  2\n)\
-                 (\ndefalias\n\ta b\n)\
-                 (deflayer base 1 2 )\
-                 ( deflayer\n\t layer2 \n\n3   4 )",
-                "(defsrc \n 1  2\n)\
-                 (\ndefalias\n\ta b\n)\
-                 (deflayer base \n 1  2\n)\
-                 (deflayer layer2 \n 3  4\n)",
+                "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1 2 )  ( deflayer \n\t layer2 \n\n3   4 )",
+                "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1  2\n)  ( deflayer \n\t layer2 \n\n3  4\n)",
             ),
             (
                 /*
                 1 defsrc, 1 correct deflayer + 1 deflayer with wrong number of
                 items - formatting applied only to the correct deflayer.
                 */
-                "(defsrc \n 1  2\n)\
-                 (deflayer base 1 2 )\
-                 ( deflayer\n\t layer2 \n\n3   4 )",
-                "(defsrc \n 1  2\n)\
-                 (deflayer base \n 1  2\n)\
-                 (deflayer base \n 3  4\n)",
+                "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3   4 )",
+                "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3  4\n)",
             ),
             (
                 /*
@@ -287,10 +207,8 @@ mod tests {
                 character (but no multi-cluster) - formatting should be applied
                 correctly regardless of used characters.
                 */
-                "(defsrc \n 🌍 1  2\n)\
-                 (deflayer base 🌍 1  2 )",
-                "(defsrc \n 🌍 1  2\n)\
-                 (deflayer base \n 🌍 1  2\n)",
+                "(defsrc \n 🌍 1  2\n)  (deflayer base 🌍   1  \n 2 \t)",
+                "(defsrc \n 🌍 1  2\n)  (deflayer base 🌍 1  2\n)",
             ),
             (
                 /*
@@ -298,31 +216,26 @@ mod tests {
                 unicode character - formatting should be applied correctly
                 regardless of used characters.
                 */
-                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)\
-                 (deflayer base 👨‍👩‍👧‍👦 1  2 )",
-                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)\
-                 (deflayer base \n 👨‍👩‍👧‍👦 1  2\n)",
+                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 \t 1     2 \n\n)",
+                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 1  2\n)",
             ),
             (
                 // 1 invalid defsrc, 1 deflayer - no changes
-                "(defsrc () 1  2)\
-                 (deflayer base 0 1 2)",
-                "(defsrc () 1  2)\
-                 (deflayer base 0 1 2)",
+                "(defsrc () 1  2)  (deflayer base 0 1 2)",
+                "(defsrc () 1  2)  (deflayer base 0 1 2)",
             ),
             // (
             //     /*
             //     1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
             //     fixme: should the space before closing paren stay?
             //     */
-            //     "(defsrc 1  2 # Mary had a little lamb\n)\
-            //      (deflayer base 1 2)",
-            //     "(defsrc 1  2 # Mary had a little lamb\n) \
-            //      (deflayer base 1  2 )",
+            //     "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
+            //     "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
             // ),
             // (
             //     /*
-            //     1 defsrc, 1 deflayer, but a line comment inside a deflayer - no formatting applied.
+            //     1 defsrc, 1 deflayer, but a line comment inside a deflayer - no
+            //     formatting applied.
             //     fixme: investigate how this feels, and possibly change.
             //     */
             //     "(defsrc 1  2)\
@@ -336,9 +249,9 @@ mod tests {
             // ),
         ];
         for (i, (case, expected_result)) in cases.iter().enumerate() {
-            log!("===========================");
-            log!("case {}", i);
+            log!("({}) ===========================", i);
             let mut tree = parse_into_ext_tree(case).expect("parses");
+            log!("case {}: {}", i, tree.to_string());
             tree.use_defsrc_layout_on_deflayers();
             assert_eq!(tree.to_string(), *expected_result);
         }

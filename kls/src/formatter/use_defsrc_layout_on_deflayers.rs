@@ -219,9 +219,9 @@ fn formatted_deflayer_node_metadata_without_comments(
         }
     };
 
-    for i in &formatting_to_apply[1..] {
+    for n in &formatting_to_apply[1..] {
         let mut s = "\n".to_string();
-        for _ in 0..formatting_to_apply[1 + i] {
+        for _ in 0..*n {
             s.push(' ');
         }
         result.push(Metadata::Whitespace(s));

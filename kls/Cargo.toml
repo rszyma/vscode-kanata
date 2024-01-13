@@ -28,6 +28,8 @@ web-sys = { version = "0.3.64", features = ["console"] }
 rustc-hash = "^1.1.0"
 anyhow = "^1.0.72"
 serde_json = "^1.0.104"
+unicode-segmentation = "1.10.1"
+zduny-wasm-timer = "0.2.8"
 
 [dev-dependencies]
 # wasm-bindgen-test = "0.3.39"

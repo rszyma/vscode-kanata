@@ -4,6 +4,8 @@ use kanata_parser::cfg::{
 };
 use std::fmt::{Debug, Display};
 
+use crate::{helpers, log};
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExtParseTree(pub NodeList);
 
@@ -84,23 +86,54 @@ impl ExtParseTree {
 
 impl Display for ExtParseTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let start = helpers::now();
         write!(f, "{}", &self.0)?;
+        log!(
+            "display for ExtParseTree in {:.3?}",
+            helpers::now().duration_since(start)
+        );
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Comment {
+    LineComment(String),
+    BlockComment(String),
+}
+
+impl Display for Comment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Comment::LineComment(x) => write!(f, "{}", x)?,
+            Comment::BlockComment(x) => write!(f, "{}", x)?,
+        };
         Ok(())
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Metadata {
-    LineComment(String),
-    BlockComment(String),
+    Comment(Comment),
     Whitespace(String),
+}
+
+impl Metadata {
+    pub fn value(&self) -> &str {
+        match self {
+            Metadata::Comment(c) => match c {
+                Comment::LineComment(x) => x,
+                Comment::BlockComment(x) => x,
+            },
+            Metadata::Whitespace(x) => x,
+        }
+    }
 }
 
 impl Display for Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Metadata::LineComment(x) => write!(f, "{}", x)?,
-            Metadata::BlockComment(x) => write!(f, "{}", x)?,
+            Metadata::Comment(x) => write!(f, "{}", x)?,
             Metadata::Whitespace(x) => write!(f, "{}", x)?,
         };
         Ok(())
@@ -110,8 +143,8 @@ impl Display for Metadata {
 impl From<SExprMetaData> for Metadata {
     fn from(value: SExprMetaData) -> Self {
         match value {
-            SExprMetaData::LineComment(x) => Metadata::LineComment(x.t),
-            SExprMetaData::BlockComment(x) => Metadata::BlockComment(x.t),
+            SExprMetaData::LineComment(x) => Metadata::Comment(Comment::LineComment(x.t)),
+            SExprMetaData::BlockComment(x) => Metadata::Comment(Comment::BlockComment(x.t)),
             SExprMetaData::Whitespace(x) => Metadata::Whitespace(x.t),
         }
     }
@@ -351,6 +384,7 @@ impl<'a> From<CustomSpan<'a>> for Span {
 pub fn parse_into_ext_tree_and_root_span(
     src: &str,
 ) -> std::result::Result<(ExtParseTree, CustomSpan<'_>), ParseError> {
+    let start_time = helpers::now();
     let filename = "";
     let (exprs, exprs_ext) = sexpr::parse_(src, filename, false)?;
     let exprs: Vec<SExpr> = exprs.into_iter().map(SExpr::List).collect();
@@ -442,6 +476,11 @@ pub fn parse_into_ext_tree_and_root_span(
         tree.push_metadata(tree_depth, metadata.into());
     }
 
+    log!(
+        "parse_into_ext_tree_and_root_span in {:.3?}",
+        helpers::now().duration_since(start_time)
+    );
+
     Ok((tree, root_span))
 }
 
@@ -487,13 +526,13 @@ mod tests {
 
     macro_rules! LineComment {
         ($text:expr) => {
-            Metadata::LineComment($text.to_string())
+            Metadata::Comment(Comment::LineComment($text.to_string()))
         };
     }
 
     macro_rules! BlockComment {
         ($text:expr) => {
-            Metadata::BlockComment($text.to_string())
+            Metadata::Comment(Comment::BlockComment($text.to_string()))
         };
     }
 

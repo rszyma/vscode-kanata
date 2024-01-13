@@ -421,7 +421,9 @@ impl KanataLanguageServer {
 
         let range = lsp_range_from_span(&root_span.into());
 
-        self.formatter.format_with_options(&mut tree, &options);
+        let start = helpers::now();
+        self.formatter.format(&mut tree, &options);
+        log!("format in {:.3?}", helpers::now().duration_since(start));
 
         to_value::<Result>(&Some(vec![TextEdit {
             range,

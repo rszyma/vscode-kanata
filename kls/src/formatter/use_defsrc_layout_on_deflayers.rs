@@ -1,16 +1,18 @@
-use crate::log;
+use std::ops::Deref;
 
 use super::ext_tree::*;
+use crate::log;
+use unicode_segmentation::*;
 
 impl ExtParseTree {
     // todo: maybe don't format if an atom in defsrc/deflayer is too large.
-    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self) {
+    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self, tab_size: u32, insert_spaces: bool) {
         let mut defsrc: Option<&'a NodeList> = None;
         let mut deflayers: Vec<&'a mut NodeList> = vec![];
 
         for top_level_item in self.0.iter_mut() {
             let top_level_list = match &mut top_level_item.expr {
-                Expr::Atom(_x) => continue,
+                Expr::Atom(_) => continue,
                 Expr::List(list) => list,
             };
 
@@ -40,6 +42,10 @@ impl ExtParseTree {
                 "deflayer" => {
                     deflayers.push(top_level_list);
                 }
+                "include" => {
+                    // TODO: search defsrc in other files
+                    // TODO: search defsrc in main file if the current one is included
+                }
                 _ => {}
             }
         }
@@ -60,8 +66,7 @@ impl ExtParseTree {
         // -1 because we don't count `defsrc` token.
         let defsrc_item_count: usize = defsrc.len() - 1;
 
-        // Each item in layout is a string that consists only of whitespace characters.
-        let mut layout: Vec<String> = vec![String::with_capacity(10); defsrc_item_count];
+        let mut layout: Vec<Vec<usize>> = vec![vec![0]; defsrc_item_count];
 
         // Read the layout from `defsrc`
         for (i, defsrc_item) in defsrc.iter().skip(1).enumerate() {
@@ -75,11 +80,15 @@ impl ExtParseTree {
 
             let defsrc_item_as_str = defsrc_item.expr.to_string();
 
+            let mut line_num: usize = 0;
             for ch in defsrc_item_as_str.chars() {
                 match ch {
-                    '\n' => layout[i].push(ch),
-                    '\t' => layout[i].push(ch),
-                    _ => layout[i].push(' '),
+                    '\n' => {
+                        layout[i].push(0);
+                        line_num += 1;
+                    }
+                    '\t' => layout[i][line_num] += tab_size as usize,
+                    _ => layout[i][line_num] += 1_usize,
                 }
             }
 
@@ -88,16 +97,21 @@ impl ExtParseTree {
             // in previous operations on tree.
             for metadata in &defsrc_item.post_metadata {
                 match metadata {
-                    Metadata::LineComment(_) => {
-                        log!("line comments unsupported for now");
-                        return;
-                    }
-                    Metadata::BlockComment(_) => {
-                        log!("block comments unsupported for now");
-                        return;
+                    Metadata::Comment(_) => {
+                        log!("formatting with comments in `defsrc` is unsupported for now");
                     }
                     Metadata::Whitespace(whitespace) => {
-                        layout[i].push_str(whitespace);
+                        let mut line_num: usize = 0;
+                        for ch in whitespace.chars() {
+                            match ch {
+                                '\n' => {
+                                    layout[i].push(0);
+                                    line_num += 1;
+                                }
+                                '\t' => layout[i][line_num] += tab_size as usize,
+                                _ => layout[i][line_num] += 1_usize,
+                            }
+                        }
                     }
                 }
             }
@@ -114,39 +128,123 @@ impl ExtParseTree {
                     .map(|f| if let Expr::Atom(x) = &f.expr { x } else { "?" })
                     .unwrap_or("?");
                 log!(
-                    "Formatting of '{}' deflayer skipped: items count doesn't match defsrc",
+                    "Formatting of '{}' deflayer skipped: item count doesn't match defsrc",
                     layer_name
                 );
                 continue;
             }
 
             for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
-                let deflayer_item_as_str = deflayer_item.expr.to_string();
+                let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
 
-                let layout_size = layout[i].chars().count();
-                let deflayer_item_size = deflayer_item_as_str.chars().count();
+                let mut post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
+                let (comments, whitespaces): (Vec<_>, Vec<_>) = post_metadata
+                    .iter_mut()
+                    .partition(|md| matches!(md, Metadata::Comment(_)));
 
-                // A hacky implementation for now. All comments will be deleted.
-                if deflayer_item_size >= layout_size {
-                    let mut iter = layout[i].chars();
-                    for ch in iter.by_ref() {
-                        if ch == '\n' {
-                            let remainder = "\n".chars().chain(iter.by_ref()).collect();
-                            deflayer_item
-                                .post_metadata
-                                .push(Metadata::Whitespace(remainder));
-                            break;
-                        }
-                    }
-                } else {
-                    // for ch in layout[i].chars().skip(deflayer_item_size) { }
-                    let ret = layout[i].chars().skip(deflayer_item_size).collect();
-                    deflayer_item.post_metadata.clear();
-                    deflayer_item.post_metadata.push(Metadata::Whitespace(ret));
-                }
+                let comments: Vec<_> = comments
+                    .iter()
+                    .map(|md| match md {
+                        Metadata::Comment(x) => x,
+                        _ => unreachable!(),
+                    })
+                    .collect();
+
+                log!("comments: {:#?}", comments);
+                log!("whitespaces: {:#?}", whitespaces);
+                let new_post_metadata = formatted_deflayer_node_metadata(
+                    expr_graphemes_count,
+                    &layout[i],
+                    &comments,
+                    // insert_spaces,
+                );
+                deflayer_item.post_metadata = new_post_metadata;
             }
         }
     }
+}
+
+/// Format metadata for a definition layer node based on specified constraints.
+///
+/// # Arguments
+///
+/// * `expr_graphemes_count` - Represents the minimum amount of space that metadata needs to occupy.
+/// * `formatting_to_apply` - Each item represents the number of spaces between '\n' characters.
+/// * `comments` - Comment metadata attached after the `Expr`.
+///
+/// # Returns
+///
+/// A vector containing formatted metadata.
+fn formatted_deflayer_node_metadata(
+    expr_graphemes_count: usize,
+    formatting_to_apply: &[usize],
+    comments: &[&Comment],
+) -> Vec<Metadata> {
+    if comments.is_empty() {
+        formatted_deflayer_node_metadata_without_comments(expr_graphemes_count, formatting_to_apply)
+    } else {
+        let indent = *formatting_to_apply.get(1).unwrap_or(&0);
+        collect_comments_into_metadata_vec(comments, indent)
+    }
+
+    // return match comments[0] {
+    //     Comment::LineComment(_) => collect_comments_into_metadata_vec(comments, indent),
+    //     Comment::BlockComment(_) => {
+    //         todo!()
+    //     }
+    // };
+}
+
+fn formatted_deflayer_node_metadata_without_comments(
+    expr_graphemes_count: usize,
+    formatting_to_apply: &[usize],
+) -> Vec<Metadata> {
+    let mut result = if expr_graphemes_count < formatting_to_apply[0] {
+        // Expr fits inside slot.
+        vec![Metadata::Whitespace(
+            " ".repeat(formatting_to_apply[0] - expr_graphemes_count),
+        )]
+    } else {
+        // Expr doesn't fit inside slot, but it's not at the end of line, we just
+        // add 1 space to separate from next expr.
+        // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
+        vec![Metadata::Whitespace(" ".to_string())]
+    };
+
+    for i in &formatting_to_apply[1..] {
+        let mut s = "\n".to_string();
+        for _ in 0..formatting_to_apply[1 + i] {
+            s.push(' ');
+        }
+        result.push(Metadata::Whitespace(s));
+    }
+
+    result
+}
+
+fn collect_comments_into_metadata_vec(comments: &[&Comment], indent: usize) -> Vec<Metadata> {
+    let mut result: Vec<Metadata> = vec![Metadata::Whitespace(" ".to_string())];
+
+    for (i, comment) in comments.iter().enumerate() {
+        let is_last_comment: bool = i + 1 == comments.len();
+        result.push(Metadata::Comment(comment.deref().clone()));
+        match comment {
+            Comment::LineComment(_) => {
+                if is_last_comment {
+                    // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
+                    result.push(Metadata::Whitespace(" ".to_string()));
+                } else {
+                    result.push(Metadata::Whitespace(" ".repeat(indent)));
+                }
+            }
+            Comment::BlockComment(_) => {
+                // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
+                result.push(Metadata::Whitespace(" ".to_string()));
+            }
+        };
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -181,15 +279,12 @@ mod tests {
                 "(defsrc \n 1  2\n) (deflayer base 3  4\n)",
             ),
             (
-                // 1 defsrc, 2 deflayers - formatting applied for both deflayers
+                // format applies to all deflayers
                 "(defsrc \n 1  2\n) (deflayer base 1 2 ) ( deflayer\n\t layer2 \n\n3  \t  \n  \t4\n )",
                 "(defsrc \n 1  2\n) (deflayer base 1  2\n) ( deflayer\n\t layer2 \n\n3  4\n)",
             ),
             (
-                /*
-                1 defsrc, 1 defalias, 2 deflayers - formatting applied for both deflayers,
-                while defalias should be untouched.
-                */
+                // format doesn't apply to blocks other than `deflayer`
                 "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1 2 )  ( deflayer \n\t layer2 \n\n3   4 )",
                 "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1  2\n)  ( deflayer \n\t layer2 \n\n3  4\n)",
             ),
@@ -202,58 +297,77 @@ mod tests {
                 "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3  4\n)",
             ),
             (
-                /*
-                1 defsrc, 1 deflayer, but the deflayer contains a multi-byte unicode
-                character (but no multi-cluster) - formatting should be applied
-                correctly regardless of used characters.
-                */
-                "(defsrc \n 🌍 1  2\n)  (deflayer base 🌍   1  \n 2 \t)",
-                "(defsrc \n 🌍 1  2\n)  (deflayer base 🌍 1  2\n)",
+                // format works when config has multi-byte unicode character
+                "(defsrc \n 0 1  2\n)  (deflayer base 🌍   1  \n 2 \t)",
+                "(defsrc \n 0 1  2\n)  (deflayer base 🌍 1  2\n)",
             ),
             (
-                /*
-                1 defsrc, 1 deflayer, but the deflayer contains a multi-cluster
-                unicode character - formatting should be applied correctly
-                regardless of used characters.
-                */
-                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 \t 1     2 \n\n)",
-                "(defsrc \n 👨‍👩‍👧‍👦 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 1  2\n)",
+                // format works when config has multi-cluster unicode characters
+                "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 \t 1     2 \n\n)",
+                "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 1  2\n)",
             ),
             (
-                // 1 invalid defsrc, 1 deflayer - no changes
+                // no format when defsrc uses an (invalid) list item
                 "(defsrc () 1  2)  (deflayer base 0 1 2)",
                 "(defsrc () 1  2)  (deflayer base 0 1 2)",
             ),
             // (
-            //     /*
-            //     1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
-            //     fixme: should the space before closing paren stay?
-            //     */
-            //     "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
-            //     "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
-            // ),
-            // (
-            //     /*
-            //     1 defsrc, 1 deflayer, but a line comment inside a deflayer - no
-            //     formatting applied.
-            //     fixme: investigate how this feels, and possibly change.
-            //     */
-            //     "(defsrc 1  2)\
-            //      (deflayer base\n  1\n  # Mary had a little lamb\n  2)",
-            //     "(defsrc 1  2)\
-            //      (deflayer base 1 # Mary had a little lamb\n  2)",
-            // ),
-            // (
-            //     // todo: same as the two above, but for block comments.
-            //     "", "",
+            //     // fix: newline in deflayer not removed
+            //     "(defsrc 1  2) (deflayer base 3  4\n)",
+            //     "(defsrc 1  2) (deflayer base 3  4)",
             // ),
         ];
+
+        let _ignored_cases = [
+            (
+                /*
+                Currently formatter does this:
+                   "(defsrc caps w a s d) (deflayer mouse  1    2 3 4 5)",
+
+                But it seems better if formatting was forced to 1 space if each item
+                is only a space apart from each other in defsrc:
+                   "(defsrc caps w a s d) (deflayer mouse   1     2   3 4   5)",
+                   "(defsrc caps w a s d) (deflayer mouse 1 2 3 4 5)",
+
+                */
+                "(defsrc caps w a s d) (deflayer mouse 1    2 3 4 5)",
+                "(defsrc caps w a s d) (deflayer mouse 1 2 3 4 5)",
+            ),
+            (
+                /*
+                1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
+                FIXME: should the space before closing paren stay?
+                */
+                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
+                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
+            ),
+            (
+                /*
+                1 defsrc, 1 deflayer, but a line comment inside a deflayer - no
+                formatting applied.
+                FIXME: investigate how this feels, and possibly change.
+                */
+                "(defsrc 1  2)  (deflayer base\n  1\n  # Mary had a little lamb\n  2)",
+                "(defsrc 1  2)  (deflayer base 1 # Mary had a little lamb\n  2)",
+            ),
+            (
+                // TODO: same as the two above, but for block comments.
+                "", "",
+            ),
+            (
+                // Convert line comment to block comment if formatting
+                "", "",
+            ),
+        ];
+
         for (i, (case, expected_result)) in cases.iter().enumerate() {
-            log!("({}) ===========================", i);
             let mut tree = parse_into_ext_tree(case).expect("parses");
-            log!("case {}: {}", i, tree.to_string());
-            tree.use_defsrc_layout_on_deflayers();
-            assert_eq!(tree.to_string(), *expected_result);
+            tree.use_defsrc_layout_on_deflayers(4, true);
+            assert_eq!(
+                tree.to_string(),
+                *expected_result,
+                "parsed tree did not equal to expected_result"
+            );
         }
     }
 }

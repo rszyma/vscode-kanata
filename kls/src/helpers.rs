@@ -27,6 +27,18 @@ macro_rules! log {
     };
 }
 
+#[cfg(target_os = "unknown")]
+#[allow(dead_code)]
+pub fn now() -> zduny_wasm_timer::Instant {
+    zduny_wasm_timer::Instant::now()
+}
+
+#[cfg(not(target_os = "unknown"))]
+#[allow(dead_code)]
+pub fn now() -> std::time::Instant {
+    std::time::Instant::now()
+}
+
 pub(crate) fn empty_diagnostics_for_doc(
     (uri, doc): (&Url, &TextDocumentItem),
 ) -> (Url, PublishDiagnosticsParams) {

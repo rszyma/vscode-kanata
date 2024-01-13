@@ -134,28 +134,27 @@ impl ExtParseTree {
                 continue;
             }
 
+            let last_expr_index = deflayer.len() - 3;
             for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
                 let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
 
-                let mut post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
-                let (comments, whitespaces): (Vec<_>, Vec<_>) = post_metadata
-                    .iter_mut()
-                    .partition(|md| matches!(md, Metadata::Comment(_)));
+                let post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
 
-                let comments: Vec<_> = comments
+                let comments: Vec<_> = post_metadata
                     .iter()
-                    .map(|md| match md {
-                        Metadata::Comment(x) => x,
-                        _ => unreachable!(),
+                    .filter_map(|md| match md {
+                        Metadata::Comment(x) => Some(x),
+                        Metadata::Whitespace(_) => None,
                     })
                     .collect();
 
-                log!("comments: {:#?}", comments);
-                log!("whitespaces: {:#?}", whitespaces);
+                let is_the_last_expr_in_deflayer = i == last_expr_index;
+
                 let new_post_metadata = formatted_deflayer_node_metadata(
                     expr_graphemes_count,
                     &layout[i],
                     &comments,
+                    is_the_last_expr_in_deflayer,
                     // insert_spaces,
                 );
                 deflayer_item.post_metadata = new_post_metadata;
@@ -179,12 +178,17 @@ fn formatted_deflayer_node_metadata(
     expr_graphemes_count: usize,
     formatting_to_apply: &[usize],
     comments: &[&Comment],
+    is_the_last_expr_in_deflayer: bool,
 ) -> Vec<Metadata> {
     if comments.is_empty() {
-        formatted_deflayer_node_metadata_without_comments(expr_graphemes_count, formatting_to_apply)
+        formatted_deflayer_node_metadata_without_comments(
+            expr_graphemes_count,
+            formatting_to_apply,
+            is_the_last_expr_in_deflayer,
+        )
     } else {
         let indent = *formatting_to_apply.get(1).unwrap_or(&0);
-        collect_comments_into_metadata_vec(comments, indent)
+        collect_comments_into_metadata_vec(comments, indent, is_the_last_expr_in_deflayer)
     }
 
     // return match comments[0] {
@@ -198,6 +202,7 @@ fn formatted_deflayer_node_metadata(
 fn formatted_deflayer_node_metadata_without_comments(
     expr_graphemes_count: usize,
     formatting_to_apply: &[usize],
+    is_the_last_expr_in_deflayer: bool,
 ) -> Vec<Metadata> {
     let mut result = if expr_graphemes_count < formatting_to_apply[0] {
         // Expr fits inside slot.
@@ -207,8 +212,11 @@ fn formatted_deflayer_node_metadata_without_comments(
     } else {
         // Expr doesn't fit inside slot, but it's not at the end of line, we just
         // add 1 space to separate from next expr.
-        // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
-        vec![Metadata::Whitespace(" ".to_string())]
+        if !is_the_last_expr_in_deflayer {
+            vec![Metadata::Whitespace(" ".to_string())]
+        } else {
+            vec![]
+        }
     };
 
     for i in &formatting_to_apply[1..] {
@@ -222,7 +230,11 @@ fn formatted_deflayer_node_metadata_without_comments(
     result
 }
 
-fn collect_comments_into_metadata_vec(comments: &[&Comment], indent: usize) -> Vec<Metadata> {
+fn collect_comments_into_metadata_vec(
+    comments: &[&Comment],
+    indent: usize,
+    is_the_last_expr_in_deflayer: bool,
+) -> Vec<Metadata> {
     let mut result: Vec<Metadata> = vec![Metadata::Whitespace(" ".to_string())];
 
     for (i, comment) in comments.iter().enumerate() {
@@ -231,8 +243,9 @@ fn collect_comments_into_metadata_vec(comments: &[&Comment], indent: usize) -> V
         match comment {
             Comment::LineComment(_) => {
                 if is_last_comment {
-                    // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
-                    result.push(Metadata::Whitespace(" ".to_string()));
+                    if !is_the_last_expr_in_deflayer {
+                        result.push(Metadata::Whitespace(" ".to_string()));
+                    }
                 } else {
                     result.push(Metadata::Whitespace(" ".repeat(indent)));
                 }
@@ -311,11 +324,11 @@ mod tests {
                 "(defsrc () 1  2)  (deflayer base 0 1 2)",
                 "(defsrc () 1  2)  (deflayer base 0 1 2)",
             ),
-            // (
-            //     // fix: newline in deflayer not removed
-            //     "(defsrc 1  2) (deflayer base 3  4\n)",
-            //     "(defsrc 1  2) (deflayer base 3  4)",
-            // ),
+            (
+                // fix: newline in deflayer not removed
+                "(defsrc 1  2) (deflayer base 3  4\n)",
+                "(defsrc 1  2) (deflayer base 3  4)",
+            ),
         ];
 
         let _ignored_cases = [

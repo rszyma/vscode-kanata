@@ -40,17 +40,14 @@ jobs:
     - name: Setup - rust target for wasm
       run: rustup target add wasm32-unknown-unknown
 
-    # - name: Build with wasm-pack
-    #   run: wasm-pack build
-
-    # - name: Test with wasm-pack
-    #   run: wasm-pack test --headless --firefox
+    - name: Rust - test kls
+      run: cargo test
 
     - name: Setup - install clippy
       run: rustup component add clippy
 
     - name: Rust - Lint
-      run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      run: cargo clippy -- -D warnings
 
     - name: Rust - Format
       run: cargo fmt --check

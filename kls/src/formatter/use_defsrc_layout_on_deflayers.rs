@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use super::ext_tree::*;
 use crate::log;
 use unicode_segmentation::*;
@@ -190,7 +188,7 @@ fn formatted_deflayer_node_metadata(
             is_the_last_expr_in_deflayer,
         )
     } else {
-        let indent = *formatting_to_apply.get(1).unwrap_or(&0);
+        let indent = formatting_to_apply.get(1).copied();
         collect_comments_into_metadata_vec(comments, indent, is_the_last_expr_in_deflayer)
     }
 }
@@ -228,25 +226,50 @@ fn formatted_deflayer_node_metadata_without_comments(
 
 fn collect_comments_into_metadata_vec(
     comments: &[&Comment],
-    indent: usize,
+    next_line_indent: Option<usize>,
     is_the_last_expr_in_deflayer: bool,
 ) -> Vec<Metadata> {
+    // non-empty comments vec should be passed, but we're handling it anyways
+    if comments.is_empty() {
+        if next_line_indent.is_some() {
+            return vec![Metadata::Whitespace("\n".to_string())];
+        } else {
+            return vec![];
+        }
+    }
     let mut result: Vec<Metadata> = vec![Metadata::Whitespace(" ".to_string())];
 
     for (i, comment) in comments.iter().enumerate() {
-        let is_last_comment: bool = i + 1 == comments.len();
-        result.push(Metadata::Comment(comment.clone().clone()));
+        let is_the_last_comment: bool = i + 1 == comments.len();
+        result.push(Metadata::Comment((*comment).clone()));
         match comment {
             Comment::LineComment(_) => {
                 if !is_the_last_expr_in_deflayer {
-                    result.push(Metadata::Whitespace(" ".repeat(indent)));
+                    result.push(Metadata::Whitespace(
+                        " ".repeat(
+                            next_line_indent
+                                .expect("line comment inside deflayer should always have newline"),
+                        ),
+                    ));
                 }
             }
-            Comment::BlockComment(_) => {
-                if !is_the_last_expr_in_deflayer {
-                    result.push(Metadata::Whitespace(" ".to_string()));
+            Comment::BlockComment(_) => match next_line_indent {
+                Some(indent) => {
+                    if is_the_last_comment {
+                        result.push(Metadata::Whitespace("\n".to_string()));
+                        if !is_the_last_expr_in_deflayer {
+                            result.push(Metadata::Whitespace(" ".repeat(indent)));
+                        }
+                    } else if !is_the_last_expr_in_deflayer {
+                        result.push(Metadata::Whitespace(" ".to_string()));
+                    }
                 }
-            }
+                None => {
+                    if !is_the_last_expr_in_deflayer {
+                        result.push(Metadata::Whitespace(" ".to_string()));
+                    }
+                }
+            },
         };
     }
 
@@ -353,8 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn regression_test_1() {
-        // fix: newline in deflayer should be removed
+    fn extra_newlines_at_the_end_of_deflayer_get_removed() {
         formats_correctly(
             "(defsrc 1  2) (deflayer base 3  4\n)",
             "(defsrc 1  2) (deflayer base 3  4)",
@@ -362,13 +384,11 @@ mod tests {
     }
 
     #[test]
-    fn regression_test_2() {
-        // fix: wrong spacing in the newline after line comment on last line
-        should_not_format("(defsrc 1  2 ;;\n  3) (deflayer base 4  5 ;;\n  6)");
-    }
+    fn line_comment_in_deflayer() {
+        // regression test for the bug: wrong spacing in the newline after line
+        // comment on last line
+        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 ;;\n  6)");
 
-    #[test]
-    fn line_comment_at_the_end_of_line_in_deflayer() {
         // Both cases seem correct, but only the first one passes as of now.
         // idk how to fix this. Probably another arg would need to be
         // added to `formatted_deflayer_node_metadata` or something.
@@ -377,62 +397,39 @@ mod tests {
     }
 
     #[test]
-    fn regression_test_4() {
+    fn indent_of_a_line_after_a_line_comment_is_correct() {
+        // should pass with just newline
+        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 \n  6)");
+        // and also with line comment
+        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 ;;\n  6)");
+    }
+
+    #[test]
+    fn block_comment_in_deflayer() {
+        // at the end of `deflayer`
         should_not_format("(defsrc 1  2) (deflayer base 4  5 #||#)");
+        // between items
+        should_not_format("(defsrc 1  2) (deflayer base 4 #||# 5)");
+        // between items, before newline
+        should_not_format("(defsrc 1\n2) (deflayer base 4 #||#\n5)");
+        // between items, before newline, respecting indent after newline
+        should_not_format("(defsrc 1\n  2) (deflayer base 4 #||#\n  5)");
     }
 
     #[test]
-    fn the_indent_a_line_after_line_comment_is_correct() {
-        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 \n  6)"); // should pass with just newline
-        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 ;;\n  6)"); // but with line comment?
-    }
-
-    #[test]
-    #[ignore = "currently not decided if these tests are correct or not"]
-    fn ignored_tests() {
-        let cases = [
-            (
-                /*
-                Currently any comments in defsrc disable formatting. So this
-                doesn't apply.
-
-                1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
-                FIXME: should the space before closing paren stay?
-                */
-                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
-                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
-            ),
-            (
-                /*
-                Currently formatter does this:
-                   "(defsrc caps w a s d) (deflayer mouse  1    2 3 4 5)",
-
-                But it seems better if formatting was forced to 1 space if each item
-                is only a space apart from each other in defsrc:
-                   "(defsrc caps w a s d) (deflayer mouse   1     2   3 4   5)",
-                   "(defsrc caps w a s d) (deflayer mouse 1 2 3 4 5)",
-
-                */
-                "(defsrc caps w a s d) (deflayer mouse 1    2 3 4 5)",
-                "(defsrc caps w a s d) (deflayer mouse 1 2 3 4 5)",
-            ),
-            (
-                /*
-                1 defsrc, 1 deflayer, but a line comment inside a deflayer - no
-                formatting applied.
-                FIXME: investigate how this feels, and possibly change.
-                */
-                "(defsrc 1  2)  (deflayer base\n  1\n  # Mary had a little lamb\n  2)",
-                "(defsrc 1  2)  (deflayer base 1 # Mary had a little lamb\n  2)",
-            ),
-            (
-                // TODO: same as the two above, but for block comments.
-                "", "",
-            ),
-            (
-                // Convert line comment to block comment if formatting
-                "", "",
-            ),
-        ];
+    #[ignore = "not implemented"]
+    fn no_format_when_defsrc_has_no_extra_spacing() {
+        /*
+        Currently formatter does this:
+           "(defsrc caps w a s d) (deflayer base 1    2 3 4 5)",
+        but the idea is to not add additional padding after "1" if defsrc
+        has no spaces (or newlines) itself
+        */
+        should_not_format("(defsrc caps w a s d) (deflayer base 1 2 3 4 5)");
+        // but extra spacing between items in deflayer should still apply:
+        formats_correctly(
+            "(defsrc caps w a s d) (deflayer base 1 2   3 4   5)",
+            "(defsrc caps w a s d) (deflayer base 1 2 3 4 5)",
+        );
     }
 }

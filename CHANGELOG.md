@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.7.0
+
 * Added experimental support for formatting `deflayer`s according to `defsrc` layout (disabled by default, can be enabled in settings)
 
 ### 0.6.3

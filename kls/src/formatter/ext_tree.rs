@@ -86,12 +86,7 @@ impl ExtParseTree {
 
 impl Display for ExtParseTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let start = helpers::now();
         write!(f, "{}", &self.0)?;
-        log!(
-            "display for ExtParseTree in {:.3?}",
-            helpers::now().duration_since(start)
-        );
         Ok(())
     }
 }

@@ -3,8 +3,9 @@ use crate::log;
 use unicode_segmentation::*;
 
 impl ExtParseTree {
-    // todo: maybe don't format if an atom in defsrc/deflayer is too large.
-    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self, tab_size: u32, insert_spaces: bool) {
+    // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
+    // TODO: respect `insert_spaces` formatter setting.
+    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self, tab_size: u32, _insert_spaces: bool) {
         let mut defsrc: Option<&'a NodeList> = None;
         let mut deflayers: Vec<&'a mut NodeList> = vec![];
 

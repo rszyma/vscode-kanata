@@ -113,18 +113,6 @@ pub enum Metadata {
     Whitespace(String),
 }
 
-impl Metadata {
-    pub fn value(&self) -> &str {
-        match self {
-            Metadata::Comment(c) => match c {
-                Comment::LineComment(x) => x,
-                Comment::BlockComment(x) => x,
-            },
-            Metadata::Whitespace(x) => x,
-        }
-    }
-}
-
 impl Display for Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -172,6 +160,7 @@ impl NodeList {
         *self = NodeList::NonEmptyList(vec![node]);
     }
 
+    #[allow(unused)]
     pub fn last(&self) -> Option<&ParseTreeNode> {
         match self {
             NodeList::NonEmptyList(xs) => xs.last(),
@@ -193,6 +182,7 @@ impl NodeList {
         }
     }
 
+    #[allow(unused)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut ParseTreeNode> {
         match self {
             NodeList::NonEmptyList(xs) => xs.get_mut(index),
@@ -350,6 +340,7 @@ impl Display for ParseTreeNode {
 }
 
 /// Parses config from text and combines both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
+#[allow(unused)]
 pub fn parse_into_ext_tree(src: &str) -> std::result::Result<ExtParseTree, ParseError> {
     parse_into_ext_tree_and_root_span(src).map(|(x1, _)| x1)
 }
@@ -376,6 +367,7 @@ impl<'a> From<CustomSpan<'a>> for Span {
     }
 }
 
+/// Parses config from text and combines both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
 pub fn parse_into_ext_tree_and_root_span(
     src: &str,
 ) -> std::result::Result<(ExtParseTree, CustomSpan<'_>), ParseError> {

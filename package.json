@@ -1,6 +1,6 @@
 {
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.3",
   "name": "vscode-kanata",
   "displayName": "Kanata Configuration Language",
   "author": "rszyma",

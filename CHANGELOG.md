@@ -4,6 +4,18 @@
 
 * no changes yet
 
+### 0.6.3
+
+* Updated kanata to [ae855e7](https://github.com/jtroo/kanata/tree/ae855e7)
+
+### 0.6.2
+
+* Updated kanata to [7650270](https://github.com/jtroo/kanata/tree/7650270)
+
+### 0.6.1
+
+* Updated kanata to [e5395c9](https://github.com/jtroo/kanata/tree/e5395c9)
+
 ### 0.6.0
 
 * Added a simple OS-based autodetection for `localKeysVariant` setting

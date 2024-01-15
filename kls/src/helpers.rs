@@ -1,7 +1,5 @@
 use std::{collections::BTreeMap, path::Path, rc::Rc};
 
-use wasm_bindgen::JsValue;
-
 use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
 use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
 
@@ -10,14 +8,35 @@ pub type HashSet<T> = rustc_hash::FxHashSet<T>;
 pub type Documents = BTreeMap<Url, TextDocumentItem>;
 pub type Diagnostics = BTreeMap<Url, PublishDiagnosticsParams>;
 
+#[cfg(target_os = "unknown")]
 #[macro_export]
 macro_rules! log {
     ($string:expr) => {
-        web_sys::console::log_1(&JsValue::from($string))
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from($string))
     };
     ($($tokens:tt)*) => {
-        web_sys::console::log_1(&JsValue::from(format!($($tokens)*)))
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!($($tokens)*)))
     };
+}
+
+#[cfg(not(target_os = "unknown"))]
+#[macro_export]
+macro_rules! log {
+    ($($tokens:tt)*) => {
+        println!($($tokens)*)
+    };
+}
+
+#[cfg(target_os = "unknown")]
+#[allow(dead_code)]
+pub fn now() -> zduny_wasm_timer::Instant {
+    zduny_wasm_timer::Instant::now()
+}
+
+#[cfg(not(target_os = "unknown"))]
+#[allow(dead_code)]
+pub fn now() -> std::time::Instant {
+    std::time::Instant::now()
 }
 
 pub(crate) fn empty_diagnostics_for_doc(
@@ -32,8 +51,8 @@ pub fn utf16_length(str: impl AsRef<str>) -> usize {
     utf16_encoded.len()
 }
 
-pub fn slice_rc_str(rc_str: &Rc<str>, start: usize, end: usize) -> String {
-    rc_str[start..end].to_string()
+pub fn slice_rc_str(rc_str: &Rc<str>, start: usize, end: usize) -> &str {
+    &rc_str[start..end]
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +67,7 @@ impl CustomParseError {
     pub fn from_parse_error(e: ParseError, main_cfg_file: &str) -> Self {
         Self {
             msg: e.msg,
-            span: e.span.unwrap_or_else(|| kanata_parser::cfg::sexpr::Span {
+            span: e.span.unwrap_or_else(|| Span {
                 file_name: main_cfg_file.into(),
                 ..Default::default()
             }),
@@ -56,30 +75,28 @@ impl CustomParseError {
     }
 }
 
-impl From<&CustomParseError> for lsp_types::Range {
-    fn from(val: &CustomParseError) -> Self {
-        lsp_types::Range {
-            start: lsp_types::Position::new(
-                val.span.start.line.try_into().unwrap(),
-                utf16_length(slice_rc_str(
-                    &val.span.file_content,
-                    val.span.start.line_beginning,
-                    val.span.start.absolute,
-                ))
-                .try_into()
-                .unwrap(),
-            ),
-            end: lsp_types::Position::new(
-                val.span.end.line.try_into().unwrap(),
-                utf16_length(slice_rc_str(
-                    &val.span.file_content,
-                    val.span.end.line_beginning,
-                    val.span.end.absolute,
-                ))
-                .try_into()
-                .unwrap(),
-            ),
-        }
+pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
+    lsp_types::Range {
+        start: lsp_types::Position::new(
+            span.start.line.try_into().unwrap(),
+            utf16_length(slice_rc_str(
+                &span.file_content,
+                span.start.line_beginning,
+                span.start.absolute,
+            ))
+            .try_into()
+            .unwrap(),
+        ),
+        end: lsp_types::Position::new(
+            span.end.line.try_into().unwrap(),
+            utf16_length(slice_rc_str(
+                &span.file_content,
+                span.end.line_beginning,
+                span.end.absolute,
+            ))
+            .try_into()
+            .unwrap(),
+        ),
     }
 }
 

@@ -18,6 +18,7 @@ connection.onInitialize((params: InitializeParams) => {
   const kls = new KanataLanguageServer(params, sendDiagnosticsCallback);
 
   connection.onNotification((...args) => kls.onNotification(...args));
+  connection.onDocumentFormatting((...args) => kls.onDocumentFormatting(...args));
 
   return {
     capabilities: {
@@ -29,6 +30,7 @@ connection.onInitialize((params: InitializeParams) => {
       // UTF-8 is not supported in vscode-languageserver/node. See:
       // https://github.com/microsoft/vscode-languageserver-node/issues/1224
       positionEncoding: PositionEncodingKind.UTF16,
+      documentFormattingProvider: true,
       workspace: {
         workspaceFolders: { supported: false },
         fileOperations: {

@@ -1,6 +1,6 @@
 **/target
 **/node_modules
-**/out
+out
 yarn-error.log
 .vscode-test
 *.vsix

@@ -1,28 +1,32 @@
+use crate::helpers::{lsp_range_from_span, HashSet};
+use anyhow::{anyhow, bail};
+use formatter::Formatter;
+use kanata_parser::cfg::{FileContentProvider, ParseError};
+use lsp_types::{
+    notification::{
+        DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
+        DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
+    },
+    request::{Formatting, Request},
+    DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
+    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams,
+    TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
+};
+use serde::Deserialize;
+use serde_wasm_bindgen::{from_value, to_value};
 use std::{
     collections::BTreeMap,
     fmt::Display,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
 };
-
-use anyhow::{anyhow, bail};
-use lsp_types::{
-    notification::{
-        DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
-        DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
-    },
-    DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams,
-    TextDocumentItem, Url, VersionedTextDocumentIdentifier,
-};
-use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
-
-use kanata_parser::cfg::{FileContentProvider, ParseError};
 
 mod helpers;
 use helpers::{empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents};
+
+mod formatter;
 
 struct Kanata {
     def_local_keys_variant_to_apply: String,
@@ -39,14 +43,17 @@ const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or
 
 impl Kanata {
     fn new(def_local_keys_variant_to_apply: DefLocalKeysVariant) -> Self {
-        *kanata_parser::keys::OSCODE_MAPPING_VARIANT.lock() = match def_local_keys_variant_to_apply
+        #[cfg(target_os = "unknown")] // todo: make this compilable for non-wasm too
         {
-            DefLocalKeysVariant::Win | DefLocalKeysVariant::Wintercept => {
-                kanata_parser::keys::Platform::Win
-            }
-            DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
-            DefLocalKeysVariant::MacOS => kanata_parser::keys::Platform::Macos,
-        };
+            *kanata_parser::keys::OSCODE_MAPPING_VARIANT.lock() =
+                match def_local_keys_variant_to_apply {
+                    DefLocalKeysVariant::Win | DefLocalKeysVariant::Wintercept => {
+                        kanata_parser::keys::Platform::Win
+                    }
+                    DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
+                    DefLocalKeysVariant::MacOS => kanata_parser::keys::Platform::Macos,
+                };
+        }
         Self {
             def_local_keys_variant_to_apply: def_local_keys_variant_to_apply.to_string(),
         }
@@ -138,10 +145,6 @@ impl Kanata {
     }
 }
 
-use serde::Deserialize;
-
-use crate::helpers::HashSet;
-
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
     #[serde(rename = "includesAndWorkspaces")]
@@ -150,6 +153,7 @@ struct Config {
     main_config_file: String,
     #[serde(rename = "localKeysVariant")]
     def_local_keys_variant: DefLocalKeysVariant,
+    format: ExtensionFormatterOptions,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -200,6 +204,14 @@ impl From<Config> for WorkspaceOptions {
     }
 }
 
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+// "interface FormatterSettings" in TS server.
+pub struct ExtensionFormatterOptions {
+    enable: bool,
+    use_defsrc_layout_on_deflayers: bool,
+}
+
 #[wasm_bindgen]
 pub struct KanataLanguageServer {
     documents: Documents,
@@ -207,6 +219,7 @@ pub struct KanataLanguageServer {
     workspace_options: WorkspaceOptions,
     root: Option<Url>,
     send_diagnostics_callback: js_sys::Function,
+    formatter: formatter::Formatter,
 }
 
 /// Public API exposed via WASM.
@@ -247,6 +260,10 @@ impl KanataLanguageServer {
         Self {
             documents: BTreeMap::new(),
             kanata: Kanata::new(config.def_local_keys_variant),
+            formatter: Formatter {
+                options: config.format,
+                remove_extra_empty_lines: false,
+            },
             workspace_options: config.into(),
             root: root_uri,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
@@ -266,7 +283,7 @@ impl KanataLanguageServer {
     #[allow(unused_variables)]
     #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onNotification)]
     pub fn on_notification(&mut self, method: &str, params: JsValue) {
-        log!(method);
+        log!("notification: {}", method);
 
         match method {
             // Nothing to do when we receive the `Initialized` notification.
@@ -366,8 +383,53 @@ impl KanataLanguageServer {
                 self.send_diagnostics(&diagnostics);
             }
 
-            _ => log!("unexpected notification"),
+            _ => log!("unsupported notification"),
         }
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDocumentFormatting)]
+    pub fn on_document_formatting(&mut self, params: JsValue) -> JsValue {
+        if !self.formatter.options.enable {
+            log!("Formatting request received, but formatting is disabled in vscode-kanata settings.");
+            return to_value::<Result>(&Some(vec![])).expect("no err");
+        }
+
+        type Params = <Formatting as Request>::Params;
+        type Result = <Formatting as Request>::Result;
+
+        let Params {
+            text_document,
+            options, // vscode formatting options
+            ..
+        } = from_value(params).expect("deserializes");
+
+        let text = &self
+            .documents
+            .get(&text_document.uri)
+            .expect("document should be cached")
+            .text;
+
+        let (mut tree, root_span) =
+            match formatter::ext_tree::parse_into_ext_tree_and_root_span(text) {
+                Ok(x) => x,
+                Err(e) => {
+                    log!("failed to parse into tree");
+                    return to_value::<Result>(&None).expect("serializes");
+                }
+            };
+
+        let range = lsp_range_from_span(&root_span.into());
+
+        let start = helpers::now();
+        self.formatter.format(&mut tree, &options);
+        log!("format in {:.3?}", helpers::now().duration_since(start));
+
+        to_value::<Result>(&Some(vec![TextEdit {
+            range,
+            new_text: tree.to_string(),
+        }]))
+        .expect("no err")
     }
 }
 
@@ -491,8 +553,10 @@ impl KanataLanguageServer {
 
         let mut diagnostics = vec![];
 
+        let range = lsp_range_from_span(&err.span);
+
         diagnostics.push(Diagnostic {
-            range: err.into(),
+            range,
             severity: Some(severity),
             source: if is_extension_the_error_source {
                 Some("vscode-kanata".to_string())
@@ -505,7 +569,7 @@ impl KanataLanguageServer {
 
         if !is_extension_the_error_source {
             diagnostics.push(Diagnostic {
-                range: err.into(),
+                range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
                 message: KANATA_PARSER_HELP.to_string(),
                 ..Default::default()

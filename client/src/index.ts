@@ -157,6 +157,7 @@ class Extension implements Disposable {
           .getConfiguration()
           .get<string>('vscode-kanata.includesAndWorkspaces', ''),
         localKeysVariant: localKeysVariant as string,
+        format: getFormatterSettings(),
       },
     };
 
@@ -258,4 +259,24 @@ function getLocalKeysVariant(): LocalKeysVariant {
   }
 
   return localKeysVariant as LocalKeysVariant;
+}
+
+
+interface FormatterSettings {
+  enable: boolean;
+  useDefsrcLayoutOnDeflayers: boolean;
+}
+
+function getFormatterSettings(): FormatterSettings {
+  const formatSettings = workspace
+    .getConfiguration()
+    .get<FormatterSettings>('vscode-kanata.format');
+
+  if (formatSettings === undefined) {
+    throw new Error('should be defined')
+  }
+
+  console.log("formatSettings:", formatSettings)
+
+  return formatSettings;
 }

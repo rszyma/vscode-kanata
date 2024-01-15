@@ -89,5 +89,5 @@ jobs:
       env:
         VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
       run: |
-        make package
+        make CARGO_FLAGS=--release package
         just release ${{ steps.new_version.outputs.value }}

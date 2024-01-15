@@ -14,7 +14,8 @@
   ],
   "categories": [
     "Programming Languages",
-    "Other"
+    "Other",
+    "Formatters"
   ],
   "repository": {
     "type": "git",
@@ -29,6 +30,14 @@
   "activationEvents": [
     "workspaceContains:**/*.kbd"
   ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": true
+    },
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -91,6 +100,16 @@
           ],
           "default": "auto",
           "markdownDescription": "Select which localkeys variant to use."
+        },
+        "vscode-kanata.format.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "[experimental] Enable formatting"
+        },
+        "vscode-kanata.format.useDefsrcLayoutOnDeflayers": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "[experimental] Formatting applies spacial layout of `defsrc` to all `deflayer`s."
         }
       }
     }

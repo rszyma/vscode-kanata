@@ -62,3 +62,4 @@ See the [change log](CHANGELOG.md).
 - https://github.com/osohq/oso - used this as vscode extension template (with a lot of things removed)
 - https://github.com/canadaduane/vscode-kmonad - syntax highlighting config
 - https://github.com/jtroo/kanata/blob/main/assets/kanata-icon.svg - kanata icon
+- https://github.com/entibo/vscode-kmonad-format - the idea of formatting `deflayer`s according to spacing in `defsrc`

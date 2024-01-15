@@ -190,13 +190,6 @@ fn formatted_deflayer_node_metadata(
         let indent = *formatting_to_apply.get(1).unwrap_or(&0);
         collect_comments_into_metadata_vec(comments, indent, is_the_last_expr_in_deflayer)
     }
-
-    // return match comments[0] {
-    //     Comment::LineComment(_) => collect_comments_into_metadata_vec(comments, indent),
-    //     Comment::BlockComment(_) => {
-    //         todo!()
-    //     }
-    // };
 }
 
 fn formatted_deflayer_node_metadata_without_comments(
@@ -251,7 +244,6 @@ fn collect_comments_into_metadata_vec(
                 }
             }
             Comment::BlockComment(_) => {
-                // FIXME: a space shoudln't be added if it's the last item in `deflayer`.
                 result.push(Metadata::Whitespace(" ".to_string()));
             }
         };
@@ -264,74 +256,149 @@ fn collect_comments_into_metadata_vec(
 mod tests {
     use super::*;
 
+    fn formats_correctly(input: &str, expected_output: &str) {
+        let mut tree = parse_into_ext_tree(input).expect("parses");
+        tree.use_defsrc_layout_on_deflayers(4, true);
+        assert_eq!(
+            tree.to_string(),
+            expected_output,
+            "parsed tree did not equal to expected_result"
+        );
+    }
+
+    fn should_not_format(input: &str) {
+        formats_correctly(input, input)
+    }
+
     #[test]
-    fn test_use_defsrc_layout_on_deflayers() {
+    fn empty_file_no_changes() {
+        should_not_format("");
+    }
+
+    #[test]
+    fn just_defsrc_no_other_blocks() {
+        should_not_format("( defcfg )");
+    }
+
+    #[test]
+    fn deflayer_defined_but_no_defsrc() {
+        should_not_format("(deflayer base  1 2 )");
+    }
+
+    #[test]
+    fn some_simple_cases() {
+        formats_correctly(
+            "(defsrc \n 1  2\n) (deflayer base 3 4 )",
+            "(defsrc \n 1  2\n) (deflayer base 3  4\n)",
+        );
+        // TODO: how should we format in such a simple case?
+        // While this seems the right this to do:
+        formats_correctly(
+            "(defsrc 1 2) (deflayer base 3  4)",
+            "(defsrc 1 2) (deflayer base 3 4)",
+        );
+        // the following looks a bit weird, but it's the current
+        // formatter behavior:
+        formats_correctly(
+            "(defsrc caps a) (deflayer base 1 2)",
+            "(defsrc caps a) (deflayer base 1    2)",
+        );
+    }
+
+    #[test]
+    fn multiple_deflayers() {
+        formats_correctly(
+            "(defsrc \n 1  2\n) (deflayer base 1 2 ) ( deflayer\n\t layer2 \n\n3  \t  \n  \t4\n )",
+            "(defsrc \n 1  2\n) (deflayer base 1  2\n) ( deflayer\n\t layer2 \n\n3  4\n)",
+        )
+    }
+
+    #[test]
+    fn only_deflayer_blocks_get_formatted() {
+        formats_correctly(
+            "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1 2 )  ( deflayer \n\t layer2 \n\n3   4 )",
+            "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1  2\n)  ( deflayer \n\t layer2 \n\n3  4\n)",
+        )
+    }
+
+    #[test]
+    fn wrong_number_of_items_in_one_of_deflayers() {
+        // Formatting should apply only to the correct deflayers, while skipping the incorrect ones.
+        formats_correctly(
+            "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3   4 )",
+            "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3  4\n)",
+        )
+    }
+
+    #[test]
+    fn multi_byte_unicode_chars() {
+        formats_correctly(
+            "(defsrc \n 0 1  2\n)  (deflayer base 🌍   1  \n 2 \t)",
+            "(defsrc \n 0 1  2\n)  (deflayer base 🌍 1  2\n)",
+        )
+    }
+
+    #[test]
+    fn multi_cluster_unicode_chars() {
+        formats_correctly(
+            "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 \t 1     2 \n\n)",
+            "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 1  2\n)",
+        )
+    }
+
+    #[test]
+    fn invalid_item_in_defsrc() {
+        should_not_format("(defsrc () 1  2)  (deflayer base 0 1 2)")
+    }
+
+    #[test]
+    fn regression_test_1() {
+        // fix: newline in deflayer should be removed
+        formats_correctly(
+            "(defsrc 1  2) (deflayer base 3  4\n)",
+            "(defsrc 1  2) (deflayer base 3  4)",
+        )
+    }
+
+    #[test]
+    fn regression_test_2() {
+        // fix: wrong spacing in the newline after line comment on last line
+        should_not_format("(defsrc 1  2 ;;\n  3) (deflayer base 4  5 ;;\n  6)")
+    }
+
+    #[test]
+    fn regression_test_3() {
+        // fix: line comments in new line get moved to the end of the previous line
+        should_not_format("(defsrc 1  2) (deflayer base 4  5\n ;;)")
+    }
+
+    #[test]
+    fn regression_test_4() {
+        // fix: block comments in new line get moved to the end of the previous line
+        should_not_format("(defsrc 1  2) (deflayer base 4  5\n#||#\n)")
+    }
+
+    #[test]
+    fn regression_test_5() {
+        // fix: additional space characters at the end of lines
+        should_not_format("(defsrc 1  2 ;;\n  3) (deflayer base 4  5\n ;;\n  6)")
+    }
+
+    #[test]
+    #[ignore = "currently not decided if these tests are correct or not"]
+    fn ignored_tests() {
         let cases = [
             (
-                // empty file - no changes
-                "", "",
-            ),
-            (
-                // no defsrc - no changes
-                "( defcfg )",
-                "( defcfg )",
-            ),
-            (
-                // 1 deflayer, no defsrc - no changes
-                "(deflayer base  1 2 )",
-                "(deflayer base  1 2 )",
-            ),
-            (
-                // 1 defsrc, 1 deflayer (very simple) - formatting applied
-                "(defsrc 1 2) (deflayer base 3  4)",
-                "(defsrc 1 2) (deflayer base 3 4)",
-            ),
-            (
-                // 1 defsrc, 1 deflayer - formatting applied
-                "(defsrc \n 1  2\n) (deflayer base 3 4 )",
-                "(defsrc \n 1  2\n) (deflayer base 3  4\n)",
-            ),
-            (
-                // format applies to all deflayers
-                "(defsrc \n 1  2\n) (deflayer base 1 2 ) ( deflayer\n\t layer2 \n\n3  \t  \n  \t4\n )",
-                "(defsrc \n 1  2\n) (deflayer base 1  2\n) ( deflayer\n\t layer2 \n\n3  4\n)",
-            ),
-            (
-                // format doesn't apply to blocks other than `deflayer`
-                "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1 2 )  ( deflayer \n\t layer2 \n\n3   4 )",
-                "(defsrc \n 1  2\n)  (\ndefalias\n\ta b\n)  (deflayer base 1  2\n)  ( deflayer \n\t layer2 \n\n3  4\n)",
-            ),
-            (
                 /*
-                1 defsrc, 1 correct deflayer + 1 deflayer with wrong number of
-                items - formatting applied only to the correct deflayer.
-                */
-                "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3   4 )",
-                "(defsrc \n 1  2\n)  (deflayer wrong 1 2  3)  ( deflayer\n\t right \n\n3  4\n)",
-            ),
-            (
-                // format works when config has multi-byte unicode character
-                "(defsrc \n 0 1  2\n)  (deflayer base 🌍   1  \n 2 \t)",
-                "(defsrc \n 0 1  2\n)  (deflayer base 🌍 1  2\n)",
-            ),
-            (
-                // format works when config has multi-cluster unicode characters
-                "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 \t 1     2 \n\n)",
-                "(defsrc \n 0 1  2\n)  (deflayer base 👨‍👩‍👧‍👦 1  2\n)",
-            ),
-            (
-                // no format when defsrc uses an (invalid) list item
-                "(defsrc () 1  2)  (deflayer base 0 1 2)",
-                "(defsrc () 1  2)  (deflayer base 0 1 2)",
-            ),
-            (
-                // fix: newline in deflayer not removed
-                "(defsrc 1  2) (deflayer base 3  4\n)",
-                "(defsrc 1  2) (deflayer base 3  4)",
-            ),
-        ];
+                Currently any comments in defsrc disable formatting. So this
+                doesn't apply.
 
-        let _ignored_cases = [
+                1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
+                FIXME: should the space before closing paren stay?
+                */
+                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
+                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
+            ),
             (
                 /*
                 Currently formatter does this:
@@ -345,14 +412,6 @@ mod tests {
                 */
                 "(defsrc caps w a s d) (deflayer mouse 1    2 3 4 5)",
                 "(defsrc caps w a s d) (deflayer mouse 1 2 3 4 5)",
-            ),
-            (
-                /*
-                1 defsrc, 1 deflayer, but a line comment inside defsrc - formatting applied
-                FIXME: should the space before closing paren stay?
-                */
-                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1 2)",
-                "(defsrc 1  2 # Mary had a little lamb\n)  (deflayer base 1  2 )",
             ),
             (
                 /*
@@ -372,15 +431,5 @@ mod tests {
                 "", "",
             ),
         ];
-
-        for (i, (case, expected_result)) in cases.iter().enumerate() {
-            let mut tree = parse_into_ext_tree(case).expect("parses");
-            tree.use_defsrc_layout_on_deflayers(4, true);
-            assert_eq!(
-                tree.to_string(),
-                *expected_result,
-                "parsed tree did not equal to expected_result"
-            );
-        }
     }
 }

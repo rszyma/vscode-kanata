@@ -247,10 +247,7 @@ fn collect_comments_into_metadata_vec(
             Comment::LineComment(_) => {
                 if !is_the_last_expr_in_deflayer {
                     result.push(Metadata::Whitespace(
-                        " ".repeat(
-                            next_line_indent
-                                .expect("line comment inside deflayer should always have newline"),
-                        ),
+                        " ".repeat(next_line_indent.unwrap_or(0)),
                     ));
                 }
             }
@@ -403,6 +400,11 @@ mod tests {
         should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 \n  6)");
         // and also with line comment
         should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 ;;\n  6)");
+        // https://github.com/rszyma/vscode-kanata/issues/15
+        formats_correctly(
+            "(defsrc\n  a b c\n)\n(deflayer base\n  a b ;;\n  c\n)",
+            "(defsrc\n  a b c\n)\n(deflayer base\n  a b ;;\nc\n)",
+        );
     }
 
     #[test]

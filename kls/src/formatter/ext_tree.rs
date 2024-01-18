@@ -542,32 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn test_macros() {
-        // use ParseTreeNode::*;
-        // assert_eq!(Tree!(), ExtParseTree(NodeList(vec![])));
-
-        // assert_eq!(
-        //     Tree!(List!()),
-        //     ExtParseTree(NodeList(vec![NodeList(vec![])]))
-        // );
-
-        // assert_eq!(
-        //     Tree!(
-        //         Atom!("test"),
-        //         Whitespace!(" "),
-        //         LineComment!("# test"),
-        //         BlockComment!("#| test |#")
-        //     ),
-        //     ExtParseTree(NodeList(vec![
-        //         Atom("test".to_string()),
-        //         Whitespace(" ".to_string()),
-        //         LineComment("# test".to_string()),
-        //         BlockComment("#| test |#".to_string())
-        //     ]))
-        // );
-    }
-
-    #[test]
     fn test_parse_into_ext_tree() {
         #[rustfmt::skip]
         let cases = vec![

@@ -56,6 +56,30 @@ impl ExtParseTree {
             }
         }
     }
+
+    pub fn includes(&self) -> Vec<&str> {
+        let mut result = vec![];
+        for top_level_block in self.0.iter() {
+            if let Expr::List(NodeList::NonEmptyList(xs)) = &top_level_block.expr {
+                if xs.len() != 2 {
+                    continue;
+                }
+
+                match &xs[0].expr {
+                    Expr::Atom(x) => match x.as_str() {
+                        "include" => {}
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                if let Expr::Atom(x) = &xs[1].expr {
+                    result.push(x.as_str().trim_matches('\"'))
+                }
+            };
+        }
+        result
+    }
 }
 
 impl ExtParseTree {
@@ -679,5 +703,39 @@ mod tests {
                 "<ExtParseTree>.to_string()"
             );
         }
+    }
+
+    #[test]
+    fn test_ext_parse_tree_includes() {
+        assert_eq!(
+            parse_into_ext_tree("(include abc.kbd)")
+                .expect("parses")
+                .includes(),
+            vec!["abc.kbd"]
+        );
+        assert_eq!(
+            parse_into_ext_tree("(qwer abc.kbd)")
+                .expect("parses")
+                .includes(),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            parse_into_ext_tree("(include abc.kbd 123.kbd)")
+                .expect("parses")
+                .includes(),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            parse_into_ext_tree("(include abc.kbd)(include 123.kbd)")
+                .expect("parses")
+                .includes(),
+            vec!["abc.kbd", "123.kbd"]
+        );
+        assert_eq!(
+            parse_into_ext_tree("(include \"my config.kbd\")(include \"included file 123.kbd\")")
+                .expect("parses")
+                .includes(),
+            vec!["my config.kbd", "included file 123.kbd"]
+        );
     }
 }

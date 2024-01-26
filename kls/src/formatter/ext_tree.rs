@@ -82,32 +82,6 @@ impl ExtParseTree {
     }
 }
 
-impl ExtParseTree {
-    // If any step on path is not List, panic.
-    // If any step is out-of-bounds, return None.
-    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-    //     if at_path.is_empty() {
-    //         return None;
-    //     }
-    //     return match self.0.get(at_path[0]) {
-    //         Some(x) => x,
-    //         None => return None,
-    //     }
-    //     .get_node(&at_path[1..]);
-    // }
-
-    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-    //     if at_path.is_empty() {
-    //         return None;
-    //     }
-    //     return match self.0.get(at_path[0]) {
-    //         Some(x) => x,
-    //         None => return None,
-    //     }
-    //     .get_node_mut(&at_path[1..]);
-    // }
-}
-
 impl Display for ExtParseTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.0)?;
@@ -289,56 +263,6 @@ impl ParseTreeNode {
             post_metadata: vec![],
         }
     }
-}
-
-impl ParseTreeNode {
-    // If any step on path is not List, panic.
-    // If any step is out-of-bounds, return None.
-    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-    //     let mut head: &ParseTreeNode = self;
-    //     for i in at_path {
-    //         if let ParseTreeNode::List(l) = head {
-    //             head = match l.get(*i) {
-    //                 Some(x) => x,
-    //                 None => return None,
-    //             };
-    //         } else {
-    //             panic!("invalid tree path")
-    //         }
-    //     }
-    //     Some(head)
-    // }
-
-    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-    //     let mut head: &mut ParseTreeNode = self;
-    //     for i in at_path {
-    //         if let ParseTreeNode::List(l) = head {
-    //             head = match l.get_mut(*i) {
-    //                 Some(x) => x,
-    //                 None => return None,
-    //             };
-    //         } else {
-    //             panic!("invalid tree path")
-    //         }
-    //     }
-    //     Some(head)
-    // }
-
-    // Panics if the variant is not List.
-    // pub fn unwrap_list(&self) -> &NodeList {
-    //     match &self.expr {
-    //         Expr::List(list) => list,
-    //         _ => panic!("not a list"),
-    //     }
-    // }
-
-    // // Panics if the variant is not List.
-    // pub fn unwrap_list_mut(&mut self) -> &mut NodeList {
-    //     match &mut self.expr {
-    //         Expr::List(list) => list,
-    //         _ => panic!("not a list"),
-    //     }
-    // }
 }
 
 impl Display for ParseTreeNode {

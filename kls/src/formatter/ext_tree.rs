@@ -1,12 +1,17 @@
+use anyhow::anyhow;
 use kanata_parser::cfg::{
     sexpr::{self, Position, SExpr, SExprMetaData, Span, Spanned},
     ParseError,
 };
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use crate::{helpers, log};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExtParseTree(pub NodeList);
 
 impl ExtParseTree {
@@ -57,12 +62,12 @@ impl ExtParseTree {
         }
     }
 
-    pub fn includes(&self) -> Vec<&str> {
+    pub fn includes(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut result = vec![];
         for top_level_block in self.0.iter() {
             if let Expr::List(NodeList::NonEmptyList(xs)) = &top_level_block.expr {
                 if xs.len() != 2 {
-                    continue;
+                    return Err(anyhow!("an include block contains more than 2 items"));
                 }
 
                 match &xs[0].expr {
@@ -74,11 +79,11 @@ impl ExtParseTree {
                 };
 
                 if let Expr::Atom(x) = &xs[1].expr {
-                    result.push(x.as_str().trim_matches('\"'))
+                    result.push(PathBuf::from_str(x.as_str().trim_matches('\"'))?)
                 }
             };
         }
-        result
+        Ok(result)
     }
 }
 
@@ -131,7 +136,7 @@ impl From<SExprMetaData> for Metadata {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NodeList {
     NonEmptyList(Vec<ParseTreeNode>),
     EmptyList(Vec<Metadata>),
@@ -228,7 +233,7 @@ impl Display for NodeList {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
     Atom(String),
     List(NodeList),
@@ -248,7 +253,7 @@ impl Display for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParseTreeNode {
     pub pre_metadata: Vec<Metadata>,
     pub expr: Expr,
@@ -634,32 +639,44 @@ mod tests {
         assert_eq!(
             parse_into_ext_tree("(include abc.kbd)")
                 .expect("parses")
-                .includes(),
-            vec!["abc.kbd"]
+                .includes()
+                .unwrap(),
+            vec![PathBuf::from_str("abc.kbd").unwrap()]
         );
         assert_eq!(
             parse_into_ext_tree("(qwer abc.kbd)")
                 .expect("parses")
-                .includes(),
-            Vec::<&str>::new()
-        );
-        assert_eq!(
-            parse_into_ext_tree("(include abc.kbd 123.kbd)")
-                .expect("parses")
-                .includes(),
-            Vec::<&str>::new()
+                .includes()
+                .unwrap(),
+            Vec::<PathBuf>::new()
         );
         assert_eq!(
             parse_into_ext_tree("(include abc.kbd)(include 123.kbd)")
                 .expect("parses")
-                .includes(),
-            vec!["abc.kbd", "123.kbd"]
+                .includes()
+                .unwrap(),
+            vec![
+                PathBuf::from_str("abc.kbd").unwrap(),
+                PathBuf::from_str("123.kbd").unwrap(),
+            ]
         );
         assert_eq!(
             parse_into_ext_tree("(include \"my config.kbd\")(include \"included file 123.kbd\")")
                 .expect("parses")
-                .includes(),
-            vec!["my config.kbd", "included file 123.kbd"]
+                .includes()
+                .unwrap(),
+            vec![
+                PathBuf::from_str("my config.kbd").unwrap(),
+                PathBuf::from_str("included file 123.kbd").unwrap(),
+            ]
         );
+    }
+
+    #[test]
+    fn test_ext_parse_tree_multiple_filenames() {
+        let r = parse_into_ext_tree("(include abc.kbd 123.kbd)")
+            .expect("parses")
+            .includes();
+        assert!(r.is_err());
     }
 }

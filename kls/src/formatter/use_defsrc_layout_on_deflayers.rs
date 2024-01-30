@@ -3,14 +3,14 @@ use crate::log;
 use unicode_segmentation::*;
 
 impl ExtParseTree {
-    // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
-    // TODO: respect `insert_spaces` formatter setting.
-    pub fn use_defsrc_layout_on_deflayers<'a>(&'a mut self, tab_size: u32, _insert_spaces: bool) {
+    /// Obtains defsrc layout from a given [`ExtParseTree`].
+    /// Returns None if found 0 defsrc blocks or found more than 1 defsrc.
+    /// It doesn't search includes.
+    pub fn defsrc_layout<'a>(&'a self, tab_size: u32) -> Option<Vec<Vec<usize>>> {
         let mut defsrc: Option<&'a NodeList> = None;
-        let mut deflayers: Vec<&'a mut NodeList> = vec![];
 
-        for top_level_item in self.0.iter_mut() {
-            let top_level_list = match &mut top_level_item.expr {
+        for top_level_item in self.0.iter() {
+            let top_level_list = match &top_level_item.expr {
                 Expr::Atom(_) => continue,
                 Expr::List(list) => list,
             };
@@ -25,31 +25,23 @@ impl ExtParseTree {
                 Expr::List(_) => continue,
             };
 
-            match first_atom.as_str() {
-                "defsrc" => match defsrc {
+            if let "defsrc" = first_atom.as_str() {
+                match defsrc {
                     Some(_) => {
                         log!(
                             "Formatting `deflayer`s failed: config file \
                                 contains multiple `defsrc` definitions."
                         );
-                        return;
+                        return None;
                     }
                     None => {
                         defsrc = Some(top_level_list);
                     }
-                },
-                "deflayer" => {
-                    deflayers.push(top_level_list);
                 }
-                "include" => {
-                    // TODO: search defsrc in other files
-                    // TODO: search defsrc in main file if the current one is included
-                }
-                _ => {}
             }
         }
 
-        let defsrc = if let Some(x) = &mut defsrc {
+        let defsrc = if let Some(x) = defsrc {
             x
         } else {
             log!(
@@ -57,7 +49,7 @@ impl ExtParseTree {
                 NOTE: includes (or the main file, if this file is non-main) haven't \
                 been checked, because it's not implemented yet."
             );
-            return;
+            return None;
         };
 
         // Get number of atoms from `defsrc` now to prevent additional allocations
@@ -74,7 +66,7 @@ impl ExtParseTree {
                     "Formatting `deflayer`s failed: there shouldn't \
                     be any lists in `defsrc`."
                 );
-                return;
+                return None;
             }
 
             let defsrc_item_as_str = defsrc_item.expr.to_string();
@@ -120,11 +112,44 @@ impl ExtParseTree {
         }
 
         // Layout no longer needs to be mutable.
-        let layout = layout;
+        Some(layout)
+    }
+
+    // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
+    // TODO: respect `tab_size`.
+    // TODO: respect `insert_spaces` formatter setting.
+    pub fn use_defsrc_layout_on_deflayers<'a>(
+        &'a mut self,
+        defsrc_layout: &[Vec<usize>],
+        _tab_size: u32,
+        _insert_spaces: bool,
+    ) {
+        let mut deflayers: Vec<&'a mut NodeList> = vec![];
+
+        for top_level_item in self.0.iter_mut() {
+            let top_level_list = match &mut top_level_item.expr {
+                Expr::Atom(_) => continue,
+                Expr::List(list) => list,
+            };
+
+            let first_item = match top_level_list.get(0) {
+                Some(x) => x,
+                None => continue,
+            };
+
+            let first_atom = match &first_item.expr {
+                Expr::Atom(x) => x,
+                Expr::List(_) => continue,
+            };
+
+            if let "deflayer" = first_atom.as_str() {
+                deflayers.push(top_level_list);
+            }
+        }
 
         // Apply the `defsrc` layout to each `deflayer` block.
         for deflayer in &mut deflayers.iter_mut() {
-            if deflayer.len() - 2 != defsrc_item_count {
+            if deflayer.len() - 2 != defsrc_layout.len() {
                 let layer_name = deflayer
                     .get(1)
                     .map(|f| if let Expr::Atom(x) = &f.expr { x } else { "?" })
@@ -154,7 +179,7 @@ impl ExtParseTree {
 
                 let new_post_metadata = formatted_deflayer_node_metadata(
                     expr_graphemes_count,
-                    &layout[i],
+                    &defsrc_layout[i],
                     &comments,
                     is_the_last_expr_in_deflayer,
                     // insert_spaces,
@@ -280,7 +305,10 @@ mod tests {
 
     fn formats_correctly(input: &str, expected_output: &str) {
         let mut tree = parse_into_ext_tree(input).expect("parses");
-        tree.use_defsrc_layout_on_deflayers(4, true);
+        let tab_size = 4;
+        if let Some(layout) = tree.defsrc_layout(tab_size) {
+            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true);
+        };
         assert_eq!(
             tree.to_string(),
             expected_output,

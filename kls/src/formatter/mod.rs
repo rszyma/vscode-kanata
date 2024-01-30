@@ -21,16 +21,25 @@ impl Formatter {
         &self,
         tree: &mut ExtParseTree,
         options: &lsp_types::FormattingOptions, // todo: we should probably handle these options
+        defsrc_layout: Option<&[Vec<usize>]>,
     ) {
         if !self.options.enable {
             return;
         }
+
         if self.remove_extra_empty_lines {
             tree.remove_excessive_adjacent_newlines(2);
         }
 
         if self.options.use_defsrc_layout_on_deflayers {
-            tree.use_defsrc_layout_on_deflayers(options.tab_size, options.insert_spaces)
+            if let Some(layout) = defsrc_layout {
+                tree.use_defsrc_layout_on_deflayers(
+                    layout,
+                    options.tab_size,
+                    options.insert_spaces,
+                    // is_main_config_file,
+                )
+            }
         }
     }
 }

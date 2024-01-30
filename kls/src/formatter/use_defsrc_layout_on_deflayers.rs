@@ -3,6 +3,80 @@ use crate::log;
 use unicode_segmentation::*;
 
 impl ExtParseTree {
+    // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
+    // TODO: respect `tab_size`.
+    // TODO: respect `insert_spaces` formatter setting.
+    pub fn use_defsrc_layout_on_deflayers<'a>(
+        &'a mut self,
+        defsrc_layout: &[Vec<usize>],
+        _tab_size: u32,
+        _insert_spaces: bool,
+    ) {
+        let mut deflayers: Vec<&'a mut NodeList> = vec![];
+
+        for top_level_item in self.0.iter_mut() {
+            let top_level_list = match &mut top_level_item.expr {
+                Expr::Atom(_) => continue,
+                Expr::List(list) => list,
+            };
+
+            let first_item = match top_level_list.get(0) {
+                Some(x) => x,
+                None => continue,
+            };
+
+            let first_atom = match &first_item.expr {
+                Expr::Atom(x) => x,
+                Expr::List(_) => continue,
+            };
+
+            if let "deflayer" = first_atom.as_str() {
+                deflayers.push(top_level_list);
+            }
+        }
+
+        // Apply the `defsrc` layout to each `deflayer` block.
+        for deflayer in &mut deflayers.iter_mut() {
+            if deflayer.len() - 2 != defsrc_layout.len() {
+                let layer_name = deflayer
+                    .get(1)
+                    .map(|f| if let Expr::Atom(x) = &f.expr { x } else { "?" })
+                    .unwrap_or("?");
+                log!(
+                    "Formatting of '{}' deflayer skipped: item count doesn't match defsrc",
+                    layer_name
+                );
+                continue;
+            }
+
+            let last_expr_index = deflayer.len() - 3;
+            for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
+                let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
+
+                let post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
+
+                let comments: Vec<_> = post_metadata
+                    .iter()
+                    .filter_map(|md| match md {
+                        Metadata::Comment(x) => Some(x),
+                        Metadata::Whitespace(_) => None,
+                    })
+                    .collect();
+
+                let is_the_last_expr_in_deflayer = i == last_expr_index;
+
+                let new_post_metadata = formatted_deflayer_node_metadata(
+                    expr_graphemes_count,
+                    &defsrc_layout[i],
+                    &comments,
+                    is_the_last_expr_in_deflayer,
+                    // insert_spaces,
+                );
+                deflayer_item.post_metadata = new_post_metadata;
+            }
+        }
+    }
+
     /// Obtains defsrc layout from a given [`ExtParseTree`].
     /// Returns None if found 0 defsrc blocks or found more than 1 defsrc.
     /// It doesn't search includes.
@@ -113,80 +187,6 @@ impl ExtParseTree {
 
         // Layout no longer needs to be mutable.
         Some(layout)
-    }
-
-    // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
-    // TODO: respect `tab_size`.
-    // TODO: respect `insert_spaces` formatter setting.
-    pub fn use_defsrc_layout_on_deflayers<'a>(
-        &'a mut self,
-        defsrc_layout: &[Vec<usize>],
-        _tab_size: u32,
-        _insert_spaces: bool,
-    ) {
-        let mut deflayers: Vec<&'a mut NodeList> = vec![];
-
-        for top_level_item in self.0.iter_mut() {
-            let top_level_list = match &mut top_level_item.expr {
-                Expr::Atom(_) => continue,
-                Expr::List(list) => list,
-            };
-
-            let first_item = match top_level_list.get(0) {
-                Some(x) => x,
-                None => continue,
-            };
-
-            let first_atom = match &first_item.expr {
-                Expr::Atom(x) => x,
-                Expr::List(_) => continue,
-            };
-
-            if let "deflayer" = first_atom.as_str() {
-                deflayers.push(top_level_list);
-            }
-        }
-
-        // Apply the `defsrc` layout to each `deflayer` block.
-        for deflayer in &mut deflayers.iter_mut() {
-            if deflayer.len() - 2 != defsrc_layout.len() {
-                let layer_name = deflayer
-                    .get(1)
-                    .map(|f| if let Expr::Atom(x) = &f.expr { x } else { "?" })
-                    .unwrap_or("?");
-                log!(
-                    "Formatting of '{}' deflayer skipped: item count doesn't match defsrc",
-                    layer_name
-                );
-                continue;
-            }
-
-            let last_expr_index = deflayer.len() - 3;
-            for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
-                let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
-
-                let post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
-
-                let comments: Vec<_> = post_metadata
-                    .iter()
-                    .filter_map(|md| match md {
-                        Metadata::Comment(x) => Some(x),
-                        Metadata::Whitespace(_) => None,
-                    })
-                    .collect();
-
-                let is_the_last_expr_in_deflayer = i == last_expr_index;
-
-                let new_post_metadata = formatted_deflayer_node_metadata(
-                    expr_graphemes_count,
-                    &defsrc_layout[i],
-                    &comments,
-                    is_the_last_expr_in_deflayer,
-                    // insert_spaces,
-                );
-                deflayer_item.post_metadata = new_post_metadata;
-            }
-        }
     }
 }
 

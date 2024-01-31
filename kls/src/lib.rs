@@ -434,8 +434,10 @@ impl KanataLanguageServer {
             &params.text_document.uri,
             &tree,
         )
-        .map_err(|e| log!("format: get_defsrc_layout: {}", e))
-        .ok()?;
+        .map_err(|e| {
+            log!("format: get_defsrc_layout error: {}", e);
+        })
+        .unwrap_or(None);
 
         self.formatter
             .format(&mut tree, &params.options, defsrc_layout.as_deref());

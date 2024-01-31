@@ -16,6 +16,9 @@ pub fn get_defsrc_layout(
             if tree.includes()?.is_empty() {
                 tree.defsrc_layout(tab_size)
             } else {
+                // This is an error, because we don't know if those included files
+                // and current file collectively don't contain >=2 `defsrc` blocks.
+                // And if that's the case, we don't want to format `deflayers`.
                 Err(anyhow!("includes are not supported in Single mode"))
             }
         }
@@ -89,6 +92,23 @@ pub fn get_defsrc_layout(
 mod tests {
     use super::*;
 
+    const MAIN_FILE: &str = "main.kbd";
+
+    fn new_btree(items: &[(&str, &str)]) -> BTreeMap<Url, TextDocumentItem> {
+        let mut btree = BTreeMap::new();
+        for item in items {
+            let uri = Url::from_str(&format!("file:///{}", item.0)).unwrap();
+            let doc = TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "kanata".to_string(),
+                version: 0,
+                text: item.1.to_string(),
+            };
+            btree.insert(uri, doc);
+        }
+        btree
+    }
+
     #[test]
     fn single_no_includes() {
         let src = "(defsrc 1 2) (deflayer base 3 4)";
@@ -96,7 +116,7 @@ mod tests {
             &WorkspaceOptions::Single,
             &BTreeMap::new(),
             4,
-            &Url::from_str("file:///main.kbd").unwrap(),
+            &Url::from_str(&format!("file://{MAIN_FILE}")).unwrap(),
             &parse_into_ext_tree_and_root_span(src).unwrap().0,
         )
         .unwrap()
@@ -113,9 +133,55 @@ mod tests {
             &WorkspaceOptions::Single,
             &BTreeMap::new(),
             4,
-            &Url::from_str("file:///main.kbd").unwrap(),
+            &Url::from_str(&format!("file://{MAIN_FILE}")).unwrap(),
             &parse_into_ext_tree_and_root_span(src).unwrap().0,
         )
         .expect_err("should be error, because includes don't work in Single mode");
+    }
+
+    #[test]
+    fn format_main_in_workspace_with_included_defsrc() {
+        let items = &[
+            (MAIN_FILE, "(deflayer base 3 4) (include included.kbd)"),
+            ("included.kbd", "(defsrc 1  2) (deflayer numbers 3  4)"),
+        ];
+        let layout = get_defsrc_layout(
+            &WorkspaceOptions::Workspace {
+                main_config_file: MAIN_FILE.to_owned(),
+                root: Url::from_str("file:///").unwrap(),
+            },
+            &new_btree(items),
+            4,
+            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
+            &parse_into_ext_tree_and_root_span(items[0].1).unwrap().0,
+        )
+        .unwrap()
+        .ok_or("should be some")
+        .unwrap();
+
+        assert_eq!(layout, vec![vec![3], vec![1]]);
+    }
+
+    #[test]
+    fn format_included_in_workspace_with_included_defsrc() {
+        let items = &[
+            (MAIN_FILE, "(deflayer base 3 4) (include included.kbd)"),
+            ("included.kbd", "(defsrc 1  2) (deflayer numbers 3  4)"),
+        ];
+        let layout = get_defsrc_layout(
+            &WorkspaceOptions::Workspace {
+                main_config_file: MAIN_FILE.to_owned(),
+                root: Url::from_str("file:///").unwrap(),
+            },
+            &new_btree(items),
+            4,
+            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
+            &parse_into_ext_tree_and_root_span(items[1].1).unwrap().0,
+        )
+        .unwrap()
+        .ok_or("should be some")
+        .unwrap();
+
+        assert_eq!(layout, vec![vec![3], vec![1]]);
     }
 }

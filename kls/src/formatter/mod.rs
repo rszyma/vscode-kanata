@@ -1,8 +1,10 @@
 pub mod ext_tree;
 use ext_tree::*;
 
+use crate::log;
+
+pub mod defsrc_layout;
 mod remove_excessive_newlines;
-mod use_defsrc_layout_on_deflayers;
 
 pub struct Formatter {
     // Additional options
@@ -32,6 +34,7 @@ impl Formatter {
         }
 
         if self.options.use_defsrc_layout_on_deflayers {
+            log!("formatting defsrc - layout: {:?}", defsrc_layout);
             if let Some(layout) = defsrc_layout {
                 tree.use_defsrc_layout_on_deflayers(
                     layout,

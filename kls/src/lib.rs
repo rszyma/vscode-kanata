@@ -1,7 +1,4 @@
-use crate::{
-    formatter::ext_tree::ExtParseTree,
-    helpers::{lsp_range_from_span, HashSet},
-};
+use crate::helpers::{lsp_range_from_span, HashSet};
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
 use kanata_parser::cfg::{FileContentProvider, ParseError};
@@ -21,7 +18,6 @@ use serde_wasm_bindgen::{from_value, to_value};
 use std::{
     collections::BTreeMap,
     fmt::Display,
-    iter::once,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
 };
@@ -431,115 +427,18 @@ impl KanataLanguageServer {
 
         let range = lsp_range_from_span(&root_span.into());
 
-        let start = helpers::now();
-
-        let defsrc_layout = match &self.workspace_options {
-            WorkspaceOptions::Single => {
-                let includes = match tree.includes() {
-                    Ok(x) => x,
-                    Err(e) => {
-                        log!("{}", e);
-                        return None;
-                    }
-                };
-                if includes.is_empty() {
-                    tree.defsrc_layout(params.options.tab_size)
-                } else {
-                    None
-                }
-            }
-            WorkspaceOptions::Workspace {
-                main_config_file,
-                root,
-            } => {
-                let main_config_file_path = match PathBuf::from_str(main_config_file) {
-                    Ok(x) => x,
-                    Err(_) => {
-                        log!("main_config_file is an invalid path");
-                        return None;
-                    }
-                };
-                let main_config_file_url = match path_to_url(&main_config_file_path, root) {
-                    Ok(x) => x,
-                    Err(_) => {
-                        log!("failed to convert main_config_file_path to url");
-                        return None;
-                    }
-                };
-                let main_tree: ExtParseTree = if main_config_file_url == params.text_document.uri {
-                    // currently opened file is the main file
-                    tree.clone() // TODO: prevent clone
-                } else {
-                    // currently opened file is non-main file, and probably an included file.
-                    let text = &match self.documents.get(&params.text_document.uri) {
-                        Some(doc) => &doc.text,
-                        None => {
-                            log!("included file is not present in the workspace");
-                            return Some(vec![]);
-                        }
-                    };
-                    match formatter::ext_tree::parse_into_ext_tree_and_root_span(text) {
-                        Ok(x) => x.0,
-                        Err(_) => {
-                            log!("main file is not found in the workspace");
-                            return None;
-                        }
-                    }
-                };
-
-                let includes = match main_tree.includes() {
-                    Ok(x) => x,
-                    Err(e) => {
-                        log!("{}", e);
-                        return None;
-                    }
-                };
-                let includes = includes
-                    .iter()
-                    .map(|path| path_to_url(path, root))
-                    .collect::<anyhow::Result<Vec<_>>>();
-                let includes = match includes {
-                    Ok(x) => x,
-                    Err(e) => {
-                        log!("include path_to_url: {}", e);
-                        return None;
-                    }
-                };
-
-                // make sure that all includes collectively contain only 1 defsrc
-                let mut defsrc_layout = None;
-                for file_url in includes.iter().chain(once(&main_config_file_url)) {
-                    let text = &self
-                        .documents
-                        .get(file_url)
-                        .expect("document should be cached")
-                        .text;
-
-                    let (tree, _) =
-                        match formatter::ext_tree::parse_into_ext_tree_and_root_span(text) {
-                            Ok(x) => x,
-                            Err(_e) => {
-                                log!("failed to parse current file into tree");
-                                return None;
-                            }
-                        };
-                    if let Some(layout) = tree.defsrc_layout(params.options.tab_size) {
-                        if defsrc_layout.is_none() {
-                            defsrc_layout = Some(layout);
-                        } else {
-                            log!("multiple defsrc definitions across includes");
-                            return None;
-                        }
-                    }
-                }
-                defsrc_layout
-            }
-        };
+        let defsrc_layout = formatter::defsrc_layout::get_defsrc_layout(
+            &self.workspace_options,
+            &self.documents,
+            params.options.tab_size,
+            &params.text_document.uri,
+            &tree,
+        )
+        .map_err(|e| log!("format: get_defsrc_layout: {}", e))
+        .ok()?;
 
         self.formatter
             .format(&mut tree, &params.options, defsrc_layout.as_deref());
-
-        log!("format in {:.3?}", helpers::now().duration_since(start));
 
         Some(vec![TextEdit {
             range,

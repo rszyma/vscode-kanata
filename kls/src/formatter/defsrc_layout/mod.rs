@@ -1,6 +1,10 @@
 use super::ext_tree::*;
 use crate::log;
+use anyhow::{anyhow, Ok};
 use unicode_segmentation::*;
+
+pub mod get_layout;
+pub use get_layout::*;
 
 impl ExtParseTree {
     // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
@@ -78,9 +82,11 @@ impl ExtParseTree {
     }
 
     /// Obtains defsrc layout from a given [`ExtParseTree`].
-    /// Returns None if found 0 defsrc blocks or found more than 1 defsrc.
-    /// It doesn't search includes.
-    pub fn defsrc_layout<'a>(&'a self, tab_size: u32) -> Option<Vec<Vec<usize>>> {
+    /// * It doesn't search includes.
+    /// * Returns `Err` if found more than 1 defsrc, or `defsrc` contains a list.
+    /// * Returns `Ok(None)` if found 0 defsrc blocks.
+    /// * Returns `Ok(Some)` otherwise.
+    pub fn defsrc_layout<'a>(&'a self, tab_size: u32) -> anyhow::Result<Option<Vec<Vec<usize>>>> {
         let mut defsrc: Option<&'a NodeList> = None;
 
         for top_level_item in self.0.iter() {
@@ -102,11 +108,7 @@ impl ExtParseTree {
             if let "defsrc" = first_atom.as_str() {
                 match defsrc {
                     Some(_) => {
-                        log!(
-                            "Formatting `deflayer`s failed: config file \
-                                contains multiple `defsrc` definitions."
-                        );
-                        return None;
+                        return Err(anyhow!("multiple `defsrc` definitions in a single file"));
                     }
                     None => {
                         defsrc = Some(top_level_list);
@@ -115,15 +117,12 @@ impl ExtParseTree {
             }
         }
 
-        let defsrc = if let Some(x) = defsrc {
-            x
-        } else {
-            log!(
-                "Formatting `deflayer`s failed: `defsrc` not found in this file. \
-                NOTE: includes (or the main file, if this file is non-main) haven't \
-                been checked, because it's not implemented yet."
-            );
-            return None;
+        let defsrc = match defsrc {
+            Some(x) => x,
+            None => {
+                // defsrc not found in this file, but it may be in another.
+                return Ok(None);
+            }
         };
 
         // Get number of atoms from `defsrc` now to prevent additional allocations
@@ -136,11 +135,7 @@ impl ExtParseTree {
         // Read the layout from `defsrc`
         for (i, defsrc_item) in defsrc.iter().skip(1).enumerate() {
             if let Expr::List(_) = defsrc_item.expr {
-                log!(
-                    "Formatting `deflayer`s failed: there shouldn't \
-                    be any lists in `defsrc`."
-                );
-                return None;
+                return Err(anyhow!("found a list in `defsrc`"));
             }
 
             let defsrc_item_as_str = defsrc_item.expr.to_string();
@@ -186,7 +181,7 @@ impl ExtParseTree {
         }
 
         // Layout no longer needs to be mutable.
-        Some(layout)
+        Ok(Some(layout))
     }
 }
 
@@ -306,7 +301,7 @@ mod tests {
     fn formats_correctly(input: &str, expected_output: &str) {
         let mut tree = parse_into_ext_tree(input).expect("parses");
         let tab_size = 4;
-        if let Some(layout) = tree.defsrc_layout(tab_size) {
+        if let Some(layout) = tree.defsrc_layout(tab_size).expect("no err") {
             tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true);
         };
         assert_eq!(

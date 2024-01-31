@@ -66,10 +66,6 @@ impl ExtParseTree {
         let mut result = vec![];
         for top_level_block in self.0.iter() {
             if let Expr::List(NodeList::NonEmptyList(xs)) = &top_level_block.expr {
-                if xs.len() != 2 {
-                    return Err(anyhow!("an include block contains more than 2 items"));
-                }
-
                 match &xs[0].expr {
                     Expr::Atom(x) => match x.as_str() {
                         "include" => {}
@@ -77,6 +73,17 @@ impl ExtParseTree {
                     },
                     _ => continue,
                 };
+
+                if xs.len() != 2 {
+                    return Err(anyhow!(
+                        "an include block items: 2 != {}; block: \n{}",
+                        xs.len(),
+                        xs.iter().fold(String::new(), |mut acc, x| {
+                            acc.push_str(&x.to_string());
+                            acc
+                        })
+                    ));
+                }
 
                 if let Expr::Atom(x) = &xs[1].expr {
                     result.push(PathBuf::from_str(x.as_str().trim_matches('\"'))?)

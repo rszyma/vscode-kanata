@@ -194,14 +194,20 @@ impl Display for DefLocalKeysVariant {
 
 #[derive(Debug, Clone)]
 enum WorkspaceOptions {
-    Single,
-    Workspace { main_config_file: String, root: Url },
+    /// `root` is `None` in Single mode when file is not opened in a workspace.
+    Single {
+        root: Option<Url>,
+    },
+    Workspace {
+        main_config_file: String,
+        root: Url,
+    },
 }
 
 impl WorkspaceOptions {
     fn from_config(config: Config, root_folder: Option<Url>) -> Self {
         match config.includes_and_workspaces {
-            IncludesAndWorkspaces::Single => WorkspaceOptions::Single,
+            IncludesAndWorkspaces::Single => WorkspaceOptions::Single { root: root_folder },
             IncludesAndWorkspaces::Workspace => WorkspaceOptions::Workspace {
                 main_config_file: config.main_config_file,
                 root: root_folder.expect("root folder should be set in workspace mode"),
@@ -525,7 +531,7 @@ impl KanataLanguageServer {
                 let filename = err.span.file_name();
                 Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
-            WorkspaceOptions::Single => match &self.documents.first_key_value() {
+            WorkspaceOptions::Single { .. } => match &self.documents.first_key_value() {
                 Some(entry) => entry.0.to_owned(),
                 None => bail!("no kanata files are opened"),
             },
@@ -613,9 +619,9 @@ impl KanataLanguageServer {
         let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
             .expect("shoudn't error because it comes from Url");
         let main_cfg_text: &str = &doc.text;
-        let is_opened_in_workspace: bool = match self.workspace_options {
+        let is_opened_in_workspace: bool = match &self.workspace_options {
             WorkspaceOptions::Workspace { .. } => true,
-            WorkspaceOptions::Single => false,
+            WorkspaceOptions::Single { root } => root.is_some(),
         };
         self.kanata
             .parse_single_file(&main_cfg_filename, main_cfg_text, is_opened_in_workspace)
@@ -651,7 +657,7 @@ impl KanataLanguageServer {
         let docs: Vec<_> = docs.iter().collect();
 
         let parse_errors = match &self.workspace_options {
-            WorkspaceOptions::Single => {
+            WorkspaceOptions::Single { .. } => {
                 let results: Vec<_> = docs
                     .iter()
                     .filter_map(|doc| self.parse_a_single_file_in_workspace(doc))

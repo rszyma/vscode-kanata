@@ -12,7 +12,7 @@ pub fn get_defsrc_layout(
     tree: &ExtParseTree, // of current file
 ) -> anyhow::Result<Option<Vec<Vec<usize>>>> {
     match workspace_options {
-        WorkspaceOptions::Single => {
+        WorkspaceOptions::Single { .. } => {
             if tree.includes()?.is_empty() {
                 tree.defsrc_layout(tab_size)
             } else {
@@ -113,10 +113,10 @@ mod tests {
     fn single_without_includes() {
         let src = "(defsrc 1 2) (deflayer base 3 4)";
         let layout = get_defsrc_layout(
-            &WorkspaceOptions::Single,
+            &WorkspaceOptions::Single { root: None },
             &BTreeMap::new(),
             4,
-            &Url::from_str(&format!("file://{MAIN_FILE}")).unwrap(),
+            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
             &parse_into_ext_tree_and_root_span(src).unwrap().0,
         )
         .unwrap()
@@ -129,14 +129,29 @@ mod tests {
     #[test]
     fn single_with_includes() {
         let src = "(defsrc 1 2) (deflayer base 3 4) (include file.kbd)";
+
         let _ = get_defsrc_layout(
-            &WorkspaceOptions::Single,
+            &WorkspaceOptions::Single { root: None },
             &BTreeMap::new(),
             4,
-            &Url::from_str(&format!("file://{MAIN_FILE}")).unwrap(),
+            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
             &parse_into_ext_tree_and_root_span(src).unwrap().0,
         )
         .expect_err("should be error, because includes don't work in Single mode");
+
+        let _ = get_defsrc_layout(
+            &WorkspaceOptions::Single {
+                root: Some(Url::from_str("file:///").unwrap()),
+            },
+            &BTreeMap::new(),
+            4,
+            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
+            &parse_into_ext_tree_and_root_span(src).unwrap().0,
+        )
+        .expect_err(
+            "should be error, because includes don't work in Single mode,\
+            even if opened in workspace",
+        );
     }
 
     #[test]

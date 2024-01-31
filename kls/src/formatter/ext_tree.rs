@@ -1,12 +1,15 @@
+use anyhow::anyhow;
 use kanata_parser::cfg::{
     sexpr::{self, Position, SExpr, SExprMetaData, Span, Spanned},
     ParseError,
 };
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    path::PathBuf,
+    str::FromStr,
+};
 
-use crate::{helpers, log};
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExtParseTree(pub NodeList);
 
 impl ExtParseTree {
@@ -56,32 +59,37 @@ impl ExtParseTree {
             }
         }
     }
-}
 
-impl ExtParseTree {
-    // If any step on path is not List, panic.
-    // If any step is out-of-bounds, return None.
-    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-    //     if at_path.is_empty() {
-    //         return None;
-    //     }
-    //     return match self.0.get(at_path[0]) {
-    //         Some(x) => x,
-    //         None => return None,
-    //     }
-    //     .get_node(&at_path[1..]);
-    // }
+    pub fn includes(&self) -> anyhow::Result<Vec<PathBuf>> {
+        let mut result = vec![];
+        for top_level_block in self.0.iter() {
+            if let Expr::List(NodeList::NonEmptyList(xs)) = &top_level_block.expr {
+                match &xs[0].expr {
+                    Expr::Atom(x) => match x.as_str() {
+                        "include" => {}
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
 
-    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-    //     if at_path.is_empty() {
-    //         return None;
-    //     }
-    //     return match self.0.get(at_path[0]) {
-    //         Some(x) => x,
-    //         None => return None,
-    //     }
-    //     .get_node_mut(&at_path[1..]);
-    // }
+                if xs.len() != 2 {
+                    return Err(anyhow!(
+                        "an include block items: 2 != {}; block: \n{}",
+                        xs.len(),
+                        xs.iter().fold(String::new(), |mut acc, x| {
+                            acc.push_str(&x.to_string());
+                            acc
+                        })
+                    ));
+                }
+
+                if let Expr::Atom(x) = &xs[1].expr {
+                    result.push(PathBuf::from_str(x.as_str().trim_matches('\"'))?)
+                }
+            };
+        }
+        Ok(result)
+    }
 }
 
 impl Display for ExtParseTree {
@@ -133,7 +141,7 @@ impl From<SExprMetaData> for Metadata {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NodeList {
     NonEmptyList(Vec<ParseTreeNode>),
     EmptyList(Vec<Metadata>),
@@ -230,7 +238,7 @@ impl Display for NodeList {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
     Atom(String),
     List(NodeList),
@@ -250,7 +258,7 @@ impl Display for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParseTreeNode {
     pub pre_metadata: Vec<Metadata>,
     pub expr: Expr,
@@ -265,56 +273,6 @@ impl ParseTreeNode {
             post_metadata: vec![],
         }
     }
-}
-
-impl ParseTreeNode {
-    // If any step on path is not List, panic.
-    // If any step is out-of-bounds, return None.
-    // pub fn get_node(&self, at_path: &[usize]) -> Option<&ParseTreeNode> {
-    //     let mut head: &ParseTreeNode = self;
-    //     for i in at_path {
-    //         if let ParseTreeNode::List(l) = head {
-    //             head = match l.get(*i) {
-    //                 Some(x) => x,
-    //                 None => return None,
-    //             };
-    //         } else {
-    //             panic!("invalid tree path")
-    //         }
-    //     }
-    //     Some(head)
-    // }
-
-    // pub fn get_node_mut(&mut self, at_path: &[usize]) -> Option<&mut ParseTreeNode> {
-    //     let mut head: &mut ParseTreeNode = self;
-    //     for i in at_path {
-    //         if let ParseTreeNode::List(l) = head {
-    //             head = match l.get_mut(*i) {
-    //                 Some(x) => x,
-    //                 None => return None,
-    //             };
-    //         } else {
-    //             panic!("invalid tree path")
-    //         }
-    //     }
-    //     Some(head)
-    // }
-
-    // Panics if the variant is not List.
-    // pub fn unwrap_list(&self) -> &NodeList {
-    //     match &self.expr {
-    //         Expr::List(list) => list,
-    //         _ => panic!("not a list"),
-    //     }
-    // }
-
-    // // Panics if the variant is not List.
-    // pub fn unwrap_list_mut(&mut self) -> &mut NodeList {
-    //     match &mut self.expr {
-    //         Expr::List(list) => list,
-    //         _ => panic!("not a list"),
-    //     }
-    // }
 }
 
 impl Display for ParseTreeNode {
@@ -371,7 +329,6 @@ impl<'a> From<CustomSpan<'a>> for Span {
 pub fn parse_into_ext_tree_and_root_span(
     src: &str,
 ) -> std::result::Result<(ExtParseTree, CustomSpan<'_>), ParseError> {
-    let start_time = helpers::now();
     let filename = "";
     let (exprs, exprs_ext) = sexpr::parse_(src, filename, false)?;
     let exprs: Vec<SExpr> = exprs.into_iter().map(SExpr::List).collect();
@@ -462,11 +419,6 @@ pub fn parse_into_ext_tree_and_root_span(
     for metadata in metadata_iter {
         tree.push_metadata(tree_depth, metadata.into());
     }
-
-    log!(
-        "parse_into_ext_tree_and_root_span in {:.3?}",
-        helpers::now().duration_since(start_time)
-    );
 
     Ok((tree, root_span))
 }
@@ -679,5 +631,51 @@ mod tests {
                 "<ExtParseTree>.to_string()"
             );
         }
+    }
+
+    #[test]
+    fn test_ext_parse_tree_includes() {
+        assert_eq!(
+            parse_into_ext_tree("(include abc.kbd)")
+                .expect("parses")
+                .includes()
+                .unwrap(),
+            vec![PathBuf::from_str("abc.kbd").unwrap()]
+        );
+        assert_eq!(
+            parse_into_ext_tree("(qwer abc.kbd)")
+                .expect("parses")
+                .includes()
+                .unwrap(),
+            Vec::<PathBuf>::new()
+        );
+        assert_eq!(
+            parse_into_ext_tree("(include abc.kbd)(include 123.kbd)")
+                .expect("parses")
+                .includes()
+                .unwrap(),
+            vec![
+                PathBuf::from_str("abc.kbd").unwrap(),
+                PathBuf::from_str("123.kbd").unwrap(),
+            ]
+        );
+        assert_eq!(
+            parse_into_ext_tree("(include \"my config.kbd\")(include \"included file 123.kbd\")")
+                .expect("parses")
+                .includes()
+                .unwrap(),
+            vec![
+                PathBuf::from_str("my config.kbd").unwrap(),
+                PathBuf::from_str("included file 123.kbd").unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ext_parse_tree_multiple_filenames() {
+        let r = parse_into_ext_tree("(include abc.kbd 123.kbd)")
+            .expect("parses")
+            .includes();
+        assert!(r.is_err());
     }
 }

@@ -3,7 +3,9 @@
 ### Unreleased
 
 * Fixed formatter crash ([#15](https://github.com/rszyma/vscode-kanata/issues/15))
-  
+* Make formatter work within included files ([#14](https://github.com/rszyma/vscode-kanata/issues/14))
+* Enable formatter by default
+
 ### 0.7.0
 
 * Added experimental support for formatting `deflayer`s according to `defsrc` layout (disabled by default, can be enabled in settings)

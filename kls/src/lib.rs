@@ -10,8 +10,8 @@ use lsp_types::{
     request::{Formatting, Request},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    FileChangeType, FileDelete, FileEvent, InitializeParams, PublishDiagnosticsParams,
-    TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
+    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, InitializeParams,
+    PublishDiagnosticsParams, TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -106,12 +106,7 @@ impl Kanata {
         let mut loaded_files: HashSet<Url> = HashSet::default();
 
         let mut get_file_content_fn_impl = |filepath: &Path| {
-            let file_url = if filepath.is_absolute() {
-                Url::from_str(format!("file://{}", filepath.to_string_lossy()).as_ref())
-                    .map_err(|_| INVALID_PATH_ERROR.to_string())?
-            } else {
-                Url::join(root_folder, &filepath.to_string_lossy()).map_err(|e| e.to_string())?
-            };
+            let file_url = path_to_url(filepath, root_folder).map_err(|_| INVALID_PATH_ERROR)?;
 
             log!("searching URL across opened documents: {}", file_url);
             let doc = all_documents.get(&file_url).ok_or_else(|| {
@@ -143,6 +138,16 @@ impl Kanata {
             &self.def_local_keys_variant_to_apply,
         )
     }
+}
+
+fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {
+    let file_url = if path.is_absolute() {
+        Url::from_str(format!("file://{}", path.to_string_lossy()).as_ref())
+            .map_err(|_| anyhow!("invalid path"))?
+    } else {
+        Url::join(root_folder, &path.to_string_lossy())?
+    };
+    Ok(file_url)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -189,16 +194,23 @@ impl Display for DefLocalKeysVariant {
 
 #[derive(Debug, Clone)]
 enum WorkspaceOptions {
-    Single,
-    Workspace { main_config_file: String },
+    /// `root` is `None` in Single mode when file is not opened in a workspace.
+    Single {
+        root: Option<Url>,
+    },
+    Workspace {
+        main_config_file: String,
+        root: Url,
+    },
 }
 
-impl From<Config> for WorkspaceOptions {
-    fn from(value: Config) -> Self {
-        match value.includes_and_workspaces {
-            IncludesAndWorkspaces::Single => WorkspaceOptions::Single,
+impl WorkspaceOptions {
+    fn from_config(config: Config, root_folder: Option<Url>) -> Self {
+        match config.includes_and_workspaces {
+            IncludesAndWorkspaces::Single => WorkspaceOptions::Single { root: root_folder },
             IncludesAndWorkspaces::Workspace => WorkspaceOptions::Workspace {
-                main_config_file: value.main_config_file,
+                main_config_file: config.main_config_file,
+                root: root_folder.expect("root folder should be set in workspace mode"),
             },
         }
     }
@@ -217,7 +229,6 @@ pub struct KanataLanguageServer {
     documents: Documents,
     kanata: Kanata,
     workspace_options: WorkspaceOptions,
-    root: Option<Url>,
     send_diagnostics_callback: js_sys::Function,
     formatter: formatter::Formatter,
 }
@@ -264,8 +275,7 @@ impl KanataLanguageServer {
                 options: config.format,
                 remove_extra_empty_lines: false,
             },
-            workspace_options: config.into(),
-            root: root_uri,
+            workspace_options: WorkspaceOptions::from_config(config, root_uri),
             send_diagnostics_callback: send_diagnostics_callback.clone(),
         }
 
@@ -390,46 +400,58 @@ impl KanataLanguageServer {
     #[allow(unused_variables)]
     #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDocumentFormatting)]
     pub fn on_document_formatting(&mut self, params: JsValue) -> JsValue {
-        if !self.formatter.options.enable {
-            log!("Formatting request received, but formatting is disabled in vscode-kanata settings.");
-            return to_value::<Result>(&Some(vec![])).expect("no err");
-        }
-
         type Params = <Formatting as Request>::Params;
         type Result = <Formatting as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_value::<Result>(&self.on_document_formatting_impl(&params)).expect("no conversion error")
+    }
 
-        let Params {
-            text_document,
-            options, // vscode formatting options
-            ..
-        } = from_value(params).expect("deserializes");
+    /// Returns None on error.
+    fn on_document_formatting_impl(
+        &mut self,
+        params: &DocumentFormattingParams,
+    ) -> Option<Vec<TextEdit>> {
+        if !self.formatter.options.enable {
+            log!("Formatting request received, but formatting is disabled in vscode-kanata settings.");
+            return Some(vec![]);
+        }
 
         let text = &self
             .documents
-            .get(&text_document.uri)
+            .get(&params.text_document.uri)
             .expect("document should be cached")
             .text;
 
         let (mut tree, root_span) =
             match formatter::ext_tree::parse_into_ext_tree_and_root_span(text) {
                 Ok(x) => x,
-                Err(e) => {
-                    log!("failed to parse into tree");
-                    return to_value::<Result>(&None).expect("serializes");
+                Err(_) => {
+                    log!("failed to parse current file into tree");
+                    return None;
                 }
             };
 
         let range = lsp_range_from_span(&root_span.into());
 
-        let start = helpers::now();
-        self.formatter.format(&mut tree, &options);
-        log!("format in {:.3?}", helpers::now().duration_since(start));
+        let defsrc_layout = formatter::defsrc_layout::get_defsrc_layout(
+            &self.workspace_options,
+            &self.documents,
+            params.options.tab_size,
+            &params.text_document.uri,
+            &tree,
+        )
+        .map_err(|e| {
+            log!("format: get_defsrc_layout error: {}", e);
+        })
+        .unwrap_or(None);
 
-        to_value::<Result>(&Some(vec![TextEdit {
+        self.formatter
+            .format(&mut tree, &params.options, defsrc_layout.as_deref());
+
+        Some(vec![TextEdit {
             range,
             new_text: tree.to_string(),
-        }]))
-        .expect("no err")
+        }])
     }
 }
 
@@ -504,12 +526,13 @@ impl KanataLanguageServer {
         &self,
         err: &CustomParseError,
     ) -> anyhow::Result<Option<TextDocumentItem>> {
-        let url: Url = match &self.root {
-            Some(root) => {
+        let url: Url = match &self.workspace_options {
+            WorkspaceOptions::Workspace { root, .. }
+            | WorkspaceOptions::Single { root: Some(root) } => {
                 let filename = err.span.file_name();
                 Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
-            None => match &self.documents.first_key_value() {
+            WorkspaceOptions::Single { root: None } => match &self.documents.first_key_value() {
                 Some(entry) => entry.0.to_owned(),
                 None => bail!("no kanata files are opened"),
             },
@@ -579,17 +602,13 @@ impl KanataLanguageServer {
         (doc, diagnostics)
     }
 
-    fn parse_workspace(&self, main_config_file: &str) -> Vec<CustomParseError> {
+    fn parse_workspace(&self, main_config_file: &str, root: &Url) -> Vec<CustomParseError> {
         log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
         let main_cfg_file = pb.as_path();
 
         self.kanata
-            .parse_workspace(
-                &self.root.clone().expect("should be set in workspace mode"),
-                main_cfg_file,
-                &self.documents,
-            )
+            .parse_workspace(root, main_cfg_file, &self.documents)
             .map(|_| None)
             .unwrap_or_else(Some)
             .into_iter()
@@ -601,7 +620,10 @@ impl KanataLanguageServer {
         let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
             .expect("shoudn't error because it comes from Url");
         let main_cfg_text: &str = &doc.text;
-        let is_opened_in_workspace: bool = self.root.is_some();
+        let is_opened_in_workspace: bool = match &self.workspace_options {
+            WorkspaceOptions::Workspace { .. } => true,
+            WorkspaceOptions::Single { root } => root.is_some(),
+        };
         self.kanata
             .parse_single_file(&main_cfg_filename, main_cfg_text, is_opened_in_workspace)
             .map(|_| None)
@@ -636,16 +658,17 @@ impl KanataLanguageServer {
         let docs: Vec<_> = docs.iter().collect();
 
         let parse_errors = match &self.workspace_options {
-            WorkspaceOptions::Single => {
+            WorkspaceOptions::Single { .. } => {
                 let results: Vec<_> = docs
                     .iter()
                     .filter_map(|doc| self.parse_a_single_file_in_workspace(doc))
                     .collect::<Vec<_>>();
                 results
             }
-            WorkspaceOptions::Workspace { main_config_file } => {
-                self.parse_workspace(main_config_file)
-            }
+            WorkspaceOptions::Workspace {
+                main_config_file,
+                root,
+            } => self.parse_workspace(main_config_file, root),
         };
 
         let new_diags = parse_errors

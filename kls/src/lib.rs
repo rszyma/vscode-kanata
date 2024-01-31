@@ -527,11 +527,12 @@ impl KanataLanguageServer {
         err: &CustomParseError,
     ) -> anyhow::Result<Option<TextDocumentItem>> {
         let url: Url = match &self.workspace_options {
-            WorkspaceOptions::Workspace { root, .. } => {
+            WorkspaceOptions::Workspace { root, .. }
+            | WorkspaceOptions::Single { root: Some(root) } => {
                 let filename = err.span.file_name();
                 Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
-            WorkspaceOptions::Single { .. } => match &self.documents.first_key_value() {
+            WorkspaceOptions::Single { root: None } => match &self.documents.first_key_value() {
                 Some(entry) => entry.0.to_owned(),
                 None => bail!("no kanata files are opened"),
             },

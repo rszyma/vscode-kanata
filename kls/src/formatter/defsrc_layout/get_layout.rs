@@ -31,13 +31,13 @@ pub fn get_defsrc_layout(
             let main_config_file_url = path_to_url(&main_config_file_path, root)
                 .map_err(|e| anyhow!("failed to convert main_config_file_path to url: {}", e))?;
 
+            // Check if currently opened file is the main file.
             let main_tree: ExtParseTree = if main_config_file_url == *file_uri {
-                // currently opened file is the main file
                 tree.clone() // TODO: prevent clone
             } else {
-                // currently opened file is non-main file, and probably an included file.
+                // Currently opened file is non-main file, it's probably an included file.
                 let text = &documents
-                    .get(file_uri)
+                    .get(&main_config_file_url)
                     .map(|doc| &doc.text)
                     .ok_or_else(|| {
                         anyhow!(
@@ -123,7 +123,7 @@ mod tests {
         .ok_or("should be some")
         .unwrap();
 
-        assert_eq!(layout, vec![vec![3], vec![1]]);
+        assert_eq!(layout, vec![vec![2], vec![1]]);
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
             },
             &new_btree(items),
             4,
-            &Url::from_str(&format!("file:///{MAIN_FILE}")).unwrap(),
+            &Url::from_str(&format!("file:///{}", items[1].0)).unwrap(),
             &parse_into_ext_tree_and_root_span(items[1].1).unwrap().0,
         )
         .unwrap()

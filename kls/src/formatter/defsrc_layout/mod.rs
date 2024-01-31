@@ -392,8 +392,13 @@ mod tests {
     }
 
     #[test]
-    fn invalid_item_in_defsrc() {
-        should_not_format("(defsrc () 1  2)  (deflayer base 0 1 2)");
+    fn defsrc_layout_when_invalid_list_item_in_defsrc() {
+        let input = "(defsrc () 1  2)  (deflayer base 0 1 2)";
+        let tree = parse_into_ext_tree(input).expect("parses");
+        tree.defsrc_layout(4).expect_err(
+            "should error, because there's a list item in defsrc, \
+            which is an error in kanata config",
+        );
     }
 
     #[test]

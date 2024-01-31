@@ -16,7 +16,7 @@ pub fn get_defsrc_layout(
             if tree.includes()?.is_empty() {
                 tree.defsrc_layout(tab_size)
             } else {
-                Ok(None)
+                Err(anyhow!("includes are not supported in Single mode"))
             }
         }
         WorkspaceOptions::Workspace {
@@ -90,8 +90,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_single_basic_main_config() {
-        let src = "(defsrc 1  2) (deflayer base 3  4)";
+    fn single_no_includes() {
+        let src = "(defsrc 1 2) (deflayer base 3 4)";
         let layout = get_defsrc_layout(
             &WorkspaceOptions::Single,
             &BTreeMap::new(),
@@ -104,5 +104,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(layout, vec![vec![3], vec![1]]);
+    }
+
+    #[test]
+    fn single_with_includes() {
+        let src = "(defsrc 1 2) (deflayer base 3 4) (include file.kbd)";
+        let _ = get_defsrc_layout(
+            &WorkspaceOptions::Single,
+            &BTreeMap::new(),
+            4,
+            &Url::from_str("file:///main.kbd").unwrap(),
+            &parse_into_ext_tree_and_root_span(src).unwrap().0,
+        )
+        .expect_err("should be error, because includes don't work in Single mode");
     }
 }

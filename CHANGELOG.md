@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.8.0
+
 * Fixed formatter crash ([#15](https://github.com/rszyma/vscode-kanata/issues/15))
 * Make formatter work within included files ([#14](https://github.com/rszyma/vscode-kanata/issues/14))
 * Enable formatter by default

@@ -1,8 +1,6 @@
 pub mod ext_tree;
 use ext_tree::*;
 
-use crate::log;
-
 pub mod defsrc_layout;
 mod remove_excessive_newlines;
 

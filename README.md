@@ -40,6 +40,13 @@ Also, if you work with multiple main files, and find yourself switching `mainCon
 there's a handy command palette entry:
 - `Kanata: Set current file as main`
 
+### Formatter: auto-apply spacial layout of `defsrc` to all `deflayer`s
+
+This is enabled by default, because I've seen a lot of kanata configs, and it seems like
+majority of users prefer to align their `deflayer`s according to spacial layout of `defsrc`.
+If you have "Auto format on save enabled" and don't want this feature, you can disable
+it in settings (search for "kanata.format").
+
 ## Contributing
 
 If you have an idea what could be improved, feel free to open an issue or a PR.

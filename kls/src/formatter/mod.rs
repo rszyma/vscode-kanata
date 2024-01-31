@@ -34,7 +34,6 @@ impl Formatter {
         }
 
         if self.options.use_defsrc_layout_on_deflayers {
-            log!("formatting defsrc - layout: {:?}", defsrc_layout);
             if let Some(layout) = defsrc_layout {
                 tree.use_defsrc_layout_on_deflayers(
                     layout,

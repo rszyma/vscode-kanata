@@ -331,7 +331,6 @@ impl<'a> From<CustomSpan<'a>> for Span {
 pub fn parse_into_ext_tree_and_root_span(
     src: &str,
 ) -> std::result::Result<(ExtParseTree, CustomSpan<'_>), ParseError> {
-    let start_time = helpers::now();
     let filename = "";
     let (exprs, exprs_ext) = sexpr::parse_(src, filename, false)?;
     let exprs: Vec<SExpr> = exprs.into_iter().map(SExpr::List).collect();
@@ -422,11 +421,6 @@ pub fn parse_into_ext_tree_and_root_span(
     for metadata in metadata_iter {
         tree.push_metadata(tree_depth, metadata.into());
     }
-
-    log!(
-        "parse_into_ext_tree_and_root_span in {:.3?}",
-        helpers::now().duration_since(start_time)
-    );
 
     Ok((tree, root_span))
 }

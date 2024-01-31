@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn single_no_includes() {
+    fn single_without_includes() {
         let src = "(defsrc 1 2) (deflayer base 3 4)";
         let layout = get_defsrc_layout(
             &WorkspaceOptions::Single,
@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn format_main_in_workspace_with_included_defsrc() {
+    fn layout_of_main_file_in_workspace_with_included_defsrc() {
         let items = &[
             (MAIN_FILE, "(deflayer base 3 4) (include included.kbd)"),
             ("included.kbd", "(defsrc 1  2) (deflayer numbers 3  4)"),
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn format_included_in_workspace_with_included_defsrc() {
+    fn layout_of_included_file_in_workspace_with_included_defsrc() {
         let items = &[
             (MAIN_FILE, "(deflayer base 3 4) (include included.kbd)"),
             ("included.kbd", "(defsrc 1  2) (deflayer numbers 3  4)"),

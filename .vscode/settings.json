@@ -1,5 +1,8 @@
 {
     "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
     "rust-analyzer.cargo.features": "all",
-    "todo-tree.tree.showBadges": false,
+    "eslint.format.enable": true,
+    "[typescript]": {
+        "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
 }

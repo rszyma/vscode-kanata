@@ -3,20 +3,41 @@
     "composite": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    "lib": ["ES2019"],
+    "lib": [
+      "ES2019"
+    ],
     "module": "commonjs",
     "outDir": "out",
     "resolveJsonModule": true,
     "rootDir": ".",
     "sourceMap": true,
-    "target": "es2019"
+    "target": "ES2022",
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "declaration": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "pretty": true,
+    "strict": true,
   },
-  "exclude": ["./node_modules", "./out"],
-  "extends": "./node_modules/gts/tsconfig-google.json",
+  "exclude": [
+    "./node_modules",
+    "./out",
+    "kanata",
+    "kanata-local"
+  ],
   "include": [],
   "references": [
-    { "path": "./client" },
-    { "path": "./server" },
-    { "path": "./test" }
+    {
+      "path": "./client"
+    },
+    {
+      "path": "./server"
+    },
+    {
+      "path": "./test"
+    }
   ]
 }

@@ -5,8 +5,8 @@ import {
   TextDocumentSyncKind,
   InitializeParams,
   PositionEncodingKind,
-} from 'vscode-languageserver/node';
-import { KanataLanguageServer } from '../../out/kls'; // eslint-disable-line node/no-unpublished-import
+} from "vscode-languageserver/node";
+import { KanataLanguageServer } from "../../out/kls";
 
 // Create LSP connection
 const connection = createConnection(ProposedFeatures.all);
@@ -18,7 +18,9 @@ connection.onInitialize((params: InitializeParams) => {
   const kls = new KanataLanguageServer(params, sendDiagnosticsCallback);
 
   connection.onNotification((...args) => kls.onNotification(...args));
-  connection.onDocumentFormatting((...args) => kls.onDocumentFormatting(...args));
+  connection.onDocumentFormatting((...args) =>
+    kls.onDocumentFormatting(...args),
+  );
 
   return {
     capabilities: {
@@ -35,7 +37,7 @@ connection.onInitialize((params: InitializeParams) => {
         workspaceFolders: { supported: false },
         fileOperations: {
           didDelete: {
-            filters: [{ pattern: { /* matches: 'folder', */ glob: '**' } }],
+            filters: [{ pattern: { /* matches: 'folder', */ glob: "**" } }],
           },
         },
       },

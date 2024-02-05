@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 
-import { platform } from 'os';
+import { platform } from "os";
 
-import { join } from 'path';
+import { join } from "path";
 
 import {
   ExtensionContext,
@@ -16,16 +16,16 @@ import {
   FileSystemWatcher,
   commands,
   ConfigurationTarget,
-} from 'vscode';
+} from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
   SettingMonitor,
   TransportKind,
   MessageActionItem,
-} from 'vscode-languageclient/node';
+} from "vscode-languageclient/node";
 
-const extensionName = 'Kanata Configuration Language';
+const extensionName = "Kanata Configuration Language";
 const outputChannel = window.createOutputChannel(extensionName);
 
 // global extension instance
@@ -33,14 +33,14 @@ let ext: Extension;
 
 export async function activate(ctx: ExtensionContext): Promise<void> {
   const cmd1 = commands.registerCommand(
-    'vscode-kanata.setSetCurrentFileAsMain',
+    "vscode-kanata.setSetCurrentFileAsMain",
     async () => {
       const editor = window.activeTextEditor;
       if (editor) {
         const fileName = editor.document.fileName;
         const cfg = workspace.getConfiguration();
         await cfg.update(
-          'vscode-kanata.mainConfigFile',
+          "vscode-kanata.mainConfigFile",
           fileName,
           ConfigurationTarget.Workspace,
         );
@@ -48,7 +48,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
         //   `Set vscode-kanata.mainConfigFile to ${fileName}`
         // );
       } else {
-        await window.showErrorMessage('No active editor');
+        await window.showErrorMessage("No active editor");
       }
     },
   );
@@ -85,7 +85,7 @@ class Extension implements Disposable {
     if (openedWorkspaces) {
       if (openedWorkspaces.length >= 2) {
         await window.showInformationMessage(
-          'Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.',
+          "Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.",
         );
       }
       root = openedWorkspaces.at(0);
@@ -106,7 +106,7 @@ class Extension implements Disposable {
   }
 
   async startClient(root: WorkspaceFolder | undefined) {
-    const serverModulePath = this.ctx.asAbsolutePath(join('out', 'server.js'));
+    const serverModulePath = this.ctx.asAbsolutePath(join("out", "server.js"));
 
     let deleteWatcher: FileSystemWatcher | undefined = undefined;
     let changeWatcher: FileSystemWatcher | undefined = undefined;
@@ -143,7 +143,7 @@ class Extension implements Disposable {
 
     const clientOpts: LanguageClientOptions = {
       documentSelector: [
-        { scheme: 'file', language: 'kanata', pattern: '**/*.kbd' },
+        { scheme: "file", language: "kanata", pattern: "**/*.kbd" },
       ],
       synchronize: { fileEvents: deleteWatcher },
       diagnosticCollectionName: extensionName,
@@ -152,10 +152,10 @@ class Extension implements Disposable {
       initializationOptions: {
         mainConfigFile: workspace
           .getConfiguration()
-          .get<string>('vscode-kanata.mainConfigFile', ''),
+          .get<string>("vscode-kanata.mainConfigFile", ""),
         includesAndWorkspaces: workspace
           .getConfiguration()
-          .get<string>('vscode-kanata.includesAndWorkspaces', ''),
+          .get<string>("vscode-kanata.includesAndWorkspaces", ""),
         localKeysVariant: localKeysVariant as string,
         format: getFormatterSettings(),
       },
@@ -177,8 +177,8 @@ class Extension implements Disposable {
 
   restart() {
     return async (e: ConfigurationChangeEvent) => {
-      if (e.affectsConfiguration('vscode-kanata')) {
-        outputChannel.appendLine('vscode-kanata configuration has changed!');
+      if (e.affectsConfiguration("vscode-kanata")) {
+        outputChannel.appendLine("vscode-kanata configuration has changed!");
         await this.stop();
         this.dispose();
         outputChannel.clear();
@@ -199,7 +199,7 @@ class Extension implements Disposable {
 }
 
 function kanataFilesInFolderPattern(folder: Uri) {
-  return new RelativePattern(folder, '**/*.kbd');
+  return new RelativePattern(folder, "**/*.kbd");
 }
 
 async function openKanataFilesInFolder(folder: Uri) {
@@ -219,34 +219,38 @@ async function openDocument(uri: Uri) {
 async function showLocalkeysManualInterventionNeeded() {
   const message =
     "Cannot select `deflocalkeys` variant automatically. Please go to extension settings and select it manually.";
-  const openSettingsAction: MessageActionItem = { title: 'Open Settings' };
+  const openSettingsAction: MessageActionItem = { title: "Open Settings" };
 
   await window
     .showInformationMessage(message, openSettingsAction)
     .then(async (selectedAction) => {
       if (selectedAction === openSettingsAction) {
         await commands.executeCommand(
-          'workbench.action.openSettings',
-          'vscode-kanata.localKeysVariant',
+          "workbench.action.openSettings",
+          "vscode-kanata.localKeysVariant",
         );
       }
     });
 }
 
-type LocalKeysVariant = 'deflocalkeys-win' | 'deflocalkeys-wintercept' | 'deflocalkeys-linux' | 'deflocalkeys-macos';
+type LocalKeysVariant =
+  | "deflocalkeys-win"
+  | "deflocalkeys-wintercept"
+  | "deflocalkeys-linux"
+  | "deflocalkeys-macos";
 
 // Gets localkeys variant from config and when set to auto, detects it based on current OS.
 function getLocalKeysVariant(): LocalKeysVariant {
   const localKeysVariant = workspace
     .getConfiguration()
-    .get<string>('vscode-kanata.localKeysVariant', '');
+    .get<string>("vscode-kanata.localKeysVariant", "");
 
-  if (localKeysVariant == 'auto') {
+  if (localKeysVariant == "auto") {
     switch (platform()) {
-      case 'linux':
-        return 'deflocalkeys-linux';
-      case 'darwin':
-        return 'deflocalkeys-macos';
+      case "linux":
+        return "deflocalkeys-linux";
+      case "darwin":
+        return "deflocalkeys-macos";
       default: // Catches both unsupported systems as well as windows, since there are 2 possible variants for windows.
         showLocalkeysManualInterventionNeeded()
           .then(null)
@@ -254,13 +258,12 @@ function getLocalKeysVariant(): LocalKeysVariant {
             outputChannel.appendLine(`error: ${e}`);
           });
         // Use 'deflocalkeys-win' as a fallback, since that's the most common variant, I guess.
-        return 'deflocalkeys-win'
+        return "deflocalkeys-win";
     }
   }
 
   return localKeysVariant as LocalKeysVariant;
 }
-
 
 interface FormatterSettings {
   enable: boolean;
@@ -270,13 +273,13 @@ interface FormatterSettings {
 function getFormatterSettings(): FormatterSettings {
   const formatSettings = workspace
     .getConfiguration()
-    .get<FormatterSettings>('vscode-kanata.format');
+    .get<FormatterSettings>("vscode-kanata.format");
 
   if (formatSettings === undefined) {
-    throw new Error('should be defined')
+    throw new Error("should be defined");
   }
 
-  console.log("formatSettings:", formatSettings)
+  console.log("formatSettings:", formatSettings);
 
   return formatSettings;
 }

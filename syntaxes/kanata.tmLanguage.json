@@ -1,6 +1,7 @@
 {
     "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
     "name": "kanata",
+    "scopeName": "source.kanata",
     "foldingStartMarker": "\\(",
     "foldingStopMarker": "\\)",
     "patterns": [
@@ -110,6 +111,15 @@
             }
         },
         {
+            "_description": "output chords",
+            "match": "((?:(?:C|A|S|M|RA|AG)-)+[\\S()]+)",
+            "captures": {
+                "1": {
+                    "name": "constant.other.output-chord.kanata"
+                }
+            }
+        },
+        {
             "begin": "\"",
             "beginCaptures": {
                 "0": {
@@ -155,6 +165,5 @@
                 }
             ]
         }
-    },
-    "scopeName": "source.kanata"
+    }
 }

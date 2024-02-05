@@ -1,9 +1,11 @@
 module.exports = {
   root: true,
-  extends: ['./node_modules/gts/'],
+  extends: ["plugin:prettier/recommended"],
   ignorePatterns: [
     'node_modules', // Self-explanatory.
     'out', // Don't lint built library.
+    "kanata",
+    "kanata-local",
   ],
   overrides: [
     {
@@ -13,12 +15,7 @@ module.exports = {
         'plugin:@typescript-eslint/recommended-requiring-type-checking',
       ],
       parserOptions: {
-        tsconfigRootDir: __dirname,
-        project: [
-          './client/tsconfig.json',
-          './server/tsconfig.json',
-          './test/tsconfig.json',
-        ],
+        project: true,
       },
     },
   ],

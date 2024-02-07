@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [dae5cc5](https://github.com/jtroo/kanata/tree/dae5cc5)
 
 ### 0.8.1
 

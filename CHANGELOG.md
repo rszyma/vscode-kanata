@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.8.3
+
 * Updated kanata to [cdb782a](https://github.com/jtroo/kanata/tree/cdb782a)
 
 ### 0.8.2

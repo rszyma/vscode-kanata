@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Fixed CRLF newlines in defsrc causing formatter to crash
 
 ### 0.8.4
 

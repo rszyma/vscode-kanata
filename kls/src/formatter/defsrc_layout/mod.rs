@@ -15,6 +15,7 @@ impl ExtParseTree {
         defsrc_layout: &[Vec<usize>],
         _tab_size: u32,
         _insert_spaces: bool,
+        line_ending: LineEndingSequence,
     ) {
         let mut deflayers: Vec<&'a mut NodeList> = vec![];
 
@@ -74,7 +75,7 @@ impl ExtParseTree {
                     &defsrc_layout[i],
                     &comments,
                     is_the_last_expr_in_deflayer,
-                    // insert_spaces,
+                    line_ending,
                 );
                 deflayer_item.post_metadata = new_post_metadata;
             }
@@ -143,6 +144,7 @@ impl ExtParseTree {
             let mut line_num: usize = 0;
             for ch in defsrc_item_as_str.chars() {
                 match ch {
+                    '\r' => {}
                     '\n' => {
                         layout[i].push(0);
                         line_num += 1;
@@ -166,6 +168,7 @@ impl ExtParseTree {
                     Metadata::Whitespace(whitespace) => {
                         for ch in whitespace.chars() {
                             match ch {
+                                '\r' => {}
                                 '\n' => {
                                     layout[i].push(0);
                                     line_num += 1;
@@ -201,16 +204,23 @@ fn formatted_deflayer_node_metadata(
     formatting_to_apply: &[usize],
     comments: &[&Comment],
     is_the_last_expr_in_deflayer: bool,
+    line_ending: LineEndingSequence,
 ) -> Vec<Metadata> {
     if comments.is_empty() {
         formatted_deflayer_node_metadata_without_comments(
             expr_graphemes_count,
             formatting_to_apply,
             is_the_last_expr_in_deflayer,
+            line_ending,
         )
     } else {
         let indent = formatting_to_apply.get(1).copied();
-        collect_comments_into_metadata_vec(comments, indent, is_the_last_expr_in_deflayer)
+        collect_comments_into_metadata_vec(
+            comments,
+            indent,
+            is_the_last_expr_in_deflayer,
+            line_ending,
+        )
     }
 }
 
@@ -218,6 +228,7 @@ fn formatted_deflayer_node_metadata_without_comments(
     expr_graphemes_count: usize,
     formatting_to_apply: &[usize],
     is_the_last_expr_in_deflayer: bool,
+    line_ending: LineEndingSequence,
 ) -> Vec<Metadata> {
     let mut result = if expr_graphemes_count < formatting_to_apply[0] {
         // Expr fits inside slot.
@@ -235,7 +246,7 @@ fn formatted_deflayer_node_metadata_without_comments(
     };
 
     for n in &formatting_to_apply[1..] {
-        let mut s = "\n".to_string();
+        let mut s = line_ending.to_string();
         for _ in 0..*n {
             s.push(' ');
         }
@@ -249,11 +260,12 @@ fn collect_comments_into_metadata_vec(
     comments: &[&Comment],
     next_line_indent: Option<usize>,
     is_the_last_expr_in_deflayer: bool,
+    line_ending: LineEndingSequence,
 ) -> Vec<Metadata> {
     // non-empty comments vec should be passed, but we're handling it anyways
     if comments.is_empty() {
         if next_line_indent.is_some() {
-            return vec![Metadata::Whitespace("\n".to_string())];
+            return vec![Metadata::Whitespace(line_ending.to_string())];
         } else {
             return vec![];
         }
@@ -274,7 +286,7 @@ fn collect_comments_into_metadata_vec(
             Comment::BlockComment(_) => match next_line_indent {
                 Some(indent) => {
                     if is_the_last_comment {
-                        result.push(Metadata::Whitespace("\n".to_string()));
+                        result.push(Metadata::Whitespace(line_ending.to_string()));
                         if !is_the_last_expr_in_deflayer {
                             result.push(Metadata::Whitespace(" ".repeat(indent)));
                         }
@@ -294,6 +306,23 @@ fn collect_comments_into_metadata_vec(
     result
 }
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Copy)]
+pub enum LineEndingSequence {
+    LF,
+    #[allow(dead_code)]
+    CRLF,
+}
+
+impl ToString for LineEndingSequence {
+    fn to_string(&self) -> String {
+        match self {
+            LineEndingSequence::LF => "\n".to_string(),
+            LineEndingSequence::CRLF => "\r\n".to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,7 +331,7 @@ mod tests {
         let mut tree = parse_into_ext_tree(input).expect("parses");
         let tab_size = 4;
         if let Some(layout) = tree.defsrc_layout(tab_size).expect("no err") {
-            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true);
+            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true, LineEndingSequence::LF);
         };
         assert_eq!(
             tree.to_string(),
@@ -461,6 +490,27 @@ mod tests {
         formats_correctly(
             "(defsrc caps w a s d) (deflayer base 1 2   3 4   5)",
             "(defsrc caps w a s d) (deflayer base 1 2 3 4 5)",
+        );
+    }
+
+    #[test]
+    fn cr_lf_line_endings() {
+        // Tests 2 things:
+        // 1. No panic (see https://github.com/rszyma/vscode-kanata/issues/20)
+        // 2. CRLF line endings applying correctly.
+
+        let input = "(defsrc 1 \r\n 2)  (deflayer base 3 \r\n 4)";
+        let expected_output = input;
+
+        let mut tree = parse_into_ext_tree(input).expect("parses");
+        let tab_size = 4;
+        if let Some(layout) = tree.defsrc_layout(tab_size).expect("no err") {
+            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true, LineEndingSequence::CRLF);
+        };
+        assert_eq!(
+            tree.to_string(),
+            expected_output,
+            "parsed tree did not equal to expected_result"
         );
     }
 }

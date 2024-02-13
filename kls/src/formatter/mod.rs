@@ -1,6 +1,8 @@
 pub mod ext_tree;
 use ext_tree::*;
 
+use self::defsrc_layout::LineEndingSequence;
+
 pub mod defsrc_layout;
 mod remove_excessive_newlines;
 
@@ -22,6 +24,7 @@ impl Formatter {
         tree: &mut ExtParseTree,
         options: &lsp_types::FormattingOptions, // todo: we should probably handle these options
         defsrc_layout: Option<&[Vec<usize>]>,
+        line_endings: LineEndingSequence,
     ) {
         if !self.options.enable {
             return;
@@ -37,7 +40,7 @@ impl Formatter {
                     layout,
                     options.tab_size,
                     options.insert_spaces,
-                    // is_main_config_file,
+                    line_endings,
                 )
             }
         }

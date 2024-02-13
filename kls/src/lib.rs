@@ -1,4 +1,7 @@
-use crate::helpers::{lsp_range_from_span, HashSet};
+use crate::{
+    formatter::defsrc_layout::LineEndingSequence,
+    helpers::{lsp_range_from_span, HashSet},
+};
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
 use kanata_parser::cfg::{FileContentProvider, ParseError};
@@ -445,8 +448,17 @@ impl KanataLanguageServer {
         })
         .unwrap_or(None);
 
-        self.formatter
-            .format(&mut tree, &params.options, defsrc_layout.as_deref());
+        // FIXME: Generally, this shouldn't be hard-coded to LF, but I couldn't find
+        // how to get line ending sequence for the current file and vscode adjusts
+        // line endings automatically, so setting it to LF hopefully won't cause any issues.
+        let line_endings = LineEndingSequence::LF;
+
+        self.formatter.format(
+            &mut tree,
+            &params.options,
+            defsrc_layout.as_deref(),
+            line_endings,
+        );
 
         Some(vec![TextEdit {
             range,

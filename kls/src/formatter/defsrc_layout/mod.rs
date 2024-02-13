@@ -10,6 +10,7 @@ impl ExtParseTree {
     // TODO: maybe don't format if an atom in defsrc/deflayer is too large.
     // TODO: respect `tab_size`.
     // TODO: respect `insert_spaces` formatter setting.
+    // TODO: respect CRLF line endings.
     pub fn use_defsrc_layout_on_deflayers<'a>(
         &'a mut self,
         defsrc_layout: &[Vec<usize>],
@@ -143,6 +144,7 @@ impl ExtParseTree {
             let mut line_num: usize = 0;
             for ch in defsrc_item_as_str.chars() {
                 match ch {
+                    '\r' => {}
                     '\n' => {
                         layout[i].push(0);
                         line_num += 1;
@@ -166,6 +168,7 @@ impl ExtParseTree {
                     Metadata::Whitespace(whitespace) => {
                         for ch in whitespace.chars() {
                             match ch {
+                                '\r' => {}
                                 '\n' => {
                                     layout[i].push(0);
                                     line_num += 1;
@@ -461,6 +464,17 @@ mod tests {
         formats_correctly(
             "(defsrc caps w a s d) (deflayer base 1 2   3 4   5)",
             "(defsrc caps w a s d) (deflayer base 1 2 3 4 5)",
+        );
+    }
+
+    #[test]
+    fn cr_lf_line_endings() {
+        // Tests 2 things:
+        // 1. No panic (see https://github.com/rszyma/vscode-kanata/issues/20)
+        // 2. CRLF line endings applying correctly.
+        formats_correctly(
+            "(defsrc 1 \r\n 2)  (deflayer base 3 \r\n 4)",
+            "(defsrc 1 \r\n 2)  (deflayer base 3 \r\n 4)",
         );
     }
 }

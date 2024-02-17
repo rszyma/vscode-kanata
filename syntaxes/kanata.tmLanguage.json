@@ -21,7 +21,7 @@
         },
         {
             "_description": "top-level blocks",
-            "match": "(?:\\(\\s*)(defcfg|defsrc|defalias|deflayer|defvar|deffakekeys|defseq|defchords|defaliasenvcond|defoverrides|deflocalkeys-linux|deflocalkeys-win|deflocalkeys-wintercept|deflocalkeys-macos|include)(?=\\s|[()])",
+            "match": "(?:\\(\\s*)(defcfg|defsrc|defalias|deflayer|defvar|deffakekeys|defseq|defchords|defaliasenvcond|defoverrides|deflocalkeys-linux|deflocalkeys-win|deflocalkeys-wintercept|deflocalkeys-macos|include|deftemplate|template-expand)(?=\\s|[()])",
             "captures": {
                 "1": {
                     "name": "keyword.control.kanata"

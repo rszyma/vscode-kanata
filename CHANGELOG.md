@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.9.3
+
 * Updated kanata to [ffd5b82](https://github.com/jtroo/kanata/tree/ffd5b82)
 
 ### 0.9.2

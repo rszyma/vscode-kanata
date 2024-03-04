@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [6182cdf](https://github.com/jtroo/kanata/tree/6182cdf)
 
 ### 0.9.8
 

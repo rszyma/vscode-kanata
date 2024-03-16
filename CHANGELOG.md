@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [f77eede](https://github.com/jtroo/kanata/tree/f77eede)
 
 ### 0.9.13
 

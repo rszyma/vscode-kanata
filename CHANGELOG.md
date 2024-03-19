@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [426a0c0](https://github.com/jtroo/kanata/tree/426a0c0)
 
 ### 0.9.16
 

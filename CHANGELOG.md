@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [680b128](https://github.com/jtroo/kanata/tree/680b128)
 
 ### 0.9.20
 

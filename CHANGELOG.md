@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [cebf123](https://github.com/jtroo/kanata/tree/cebf123)
 
 ### 0.9.24
 

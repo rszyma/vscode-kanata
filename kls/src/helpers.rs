@@ -105,6 +105,7 @@ pub fn parse_wrapper(
     main_cfg_path: &Path,
     file_content_provider: &mut FileContentProvider,
     def_local_keys_variant_to_apply: &str,
+    env_vars: &Vec<(String, String)>,
 ) -> Result<(), CustomParseError> {
     kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
@@ -112,6 +113,7 @@ pub fn parse_wrapper(
         main_cfg_path,
         file_content_provider,
         def_local_keys_variant_to_apply,
+        Ok(env_vars.to_owned()),
     )
     .map(|_| {
         log!(

@@ -252,8 +252,8 @@ impl KanataLanguageServer {
     pub fn new(initialize_params: JsValue, send_diagnostics_callback: &js_sys::Function) -> Self {
         console_error_panic_hook::set_once();
 
+        #[allow(deprecated)]
         let InitializeParams {
-            #[allow(deprecated)]
             mut root_uri,
             initialization_options,
             ..

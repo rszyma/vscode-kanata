@@ -19,7 +19,7 @@ use lsp_types::{
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fmt::Display,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
@@ -33,6 +33,7 @@ mod formatter;
 
 struct Kanata {
     def_local_keys_variant_to_apply: String,
+    env_vars: Vec<(String, String)>,
 }
 
 const EXTENSION_ERROR_PREFIX: &str = "Kanata Extension: ";
@@ -45,7 +46,10 @@ const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or
     ask: https://github.com/jtroo/kanata/discussions";
 
 impl Kanata {
-    fn new(def_local_keys_variant_to_apply: DefLocalKeysVariant) -> Self {
+    fn new(
+        def_local_keys_variant_to_apply: DefLocalKeysVariant,
+        env_vars: Vec<(String, String)>,
+    ) -> Self {
         #[cfg(target_os = "unknown")] // todo: make this compilable for non-wasm too
         {
             *kanata_parser::keys::OSCODE_MAPPING_VARIANT.lock() =
@@ -59,6 +63,7 @@ impl Kanata {
         }
         Self {
             def_local_keys_variant_to_apply: def_local_keys_variant_to_apply.to_string(),
+            env_vars,
         }
     }
 
@@ -90,6 +95,7 @@ impl Kanata {
             main_cfg_filename,
             &mut FileContentProvider::new(&mut get_file_content_fn_impl),
             &self.def_local_keys_variant_to_apply,
+            &self.env_vars,
         )
     }
 
@@ -139,6 +145,7 @@ impl Kanata {
             main_cfg_file,
             &mut file_content_provider,
             &self.def_local_keys_variant_to_apply,
+            &self.env_vars,
         )
     }
 }
@@ -162,6 +169,8 @@ struct Config {
     #[serde(rename = "localKeysVariant")]
     def_local_keys_variant: DefLocalKeysVariant,
     format: ExtensionFormatterOptions,
+    #[serde(rename = "envVariables")]
+    env_variables: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -208,11 +217,11 @@ enum WorkspaceOptions {
 }
 
 impl WorkspaceOptions {
-    fn from_config(config: Config, root_folder: Option<Url>) -> Self {
+    fn from_config(config: &Config, root_folder: Option<Url>) -> Self {
         match config.includes_and_workspaces {
             IncludesAndWorkspaces::Single => WorkspaceOptions::Single { root: root_folder },
             IncludesAndWorkspaces::Workspace => WorkspaceOptions::Workspace {
-                main_config_file: config.main_config_file,
+                main_config_file: config.main_config_file.clone(),
                 root: root_folder.expect("root folder should be set in workspace mode"),
             },
         }
@@ -271,14 +280,19 @@ impl KanataLanguageServer {
             }
         };
 
+        let workspace_options = WorkspaceOptions::from_config(&config, root_uri);
+        let env_vars: Vec<_> = config.env_variables.into_iter().collect();
+
+        log!("env variables: {:?}", &env_vars);
+
         Self {
             documents: BTreeMap::new(),
-            kanata: Kanata::new(config.def_local_keys_variant),
+            kanata: Kanata::new(config.def_local_keys_variant, env_vars),
             formatter: Formatter {
                 options: config.format,
                 remove_extra_empty_lines: false,
             },
-            workspace_options: WorkspaceOptions::from_config(config, root_uri),
+            workspace_options,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
         }
 

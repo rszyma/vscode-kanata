@@ -110,6 +110,14 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Formatting applies spacial layout of `defsrc` to all `deflayer`s."
+        },
+        "vscode-kanata.environmentVariables": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Environment variables to pass to kanata parser to use in `defaliasenvcond`."
         }
       }
     }

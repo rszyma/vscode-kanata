@@ -158,6 +158,9 @@ class Extension implements Disposable {
           .get<string>("vscode-kanata.includesAndWorkspaces", ""),
         localKeysVariant: localKeysVariant as string,
         format: getFormatterSettings(),
+        envVariables: workspace.getConfiguration().get<{
+          [id: string]: string;
+        }>("vscode-kanata.environmentVariables", {}),
       },
     };
 

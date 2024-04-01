@@ -253,6 +253,7 @@ impl KanataLanguageServer {
         console_error_panic_hook::set_once();
 
         let InitializeParams {
+            #[allow(deprecated)]
             mut root_uri,
             initialization_options,
             ..

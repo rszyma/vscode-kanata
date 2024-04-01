@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Fix crash when including file that doesn't exist [#25](https://github.com/rszyma/vscode-kanata/issues/25)
 
 ### 0.9.27
 

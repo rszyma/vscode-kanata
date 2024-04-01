@@ -62,12 +62,11 @@ pub fn get_defsrc_layout(
             // make sure that all includes collectively contain only 1 defsrc
             let mut defsrc_layout = None;
             for file_url in includes.iter().chain(iter::once(&main_config_file_url)) {
-                let text = &documents
+                let doc = &documents
                     .get(file_url)
-                    .expect("document should be cached")
-                    .text;
+                    .ok_or_else(|| anyhow!("document '{file_url}' is not loaded"))?;
 
-                let tree = parse_into_ext_tree_and_root_span(text)
+                let tree = parse_into_ext_tree_and_root_span(&doc.text)
                     .map(|x| x.0)
                     .map_err(|e| {
                         anyhow!(

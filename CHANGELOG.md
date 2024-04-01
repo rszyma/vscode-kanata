@@ -6,9 +6,9 @@
 
 ### 0.10.0
 
-* Add a settings entry to allow specifying environment variables that parser should use. This adds support for `defaliasenvcond`
+* Add a settings entry to allow specifying environment variables that parser should use. This adds support for `defaliasenvcond` ([#24](https://github.com/rszyma/vscode-kanata/issues/24https://github.com/rszyma/vscode-kanata/issues/24))
 * Updated kanata to [4f8972b](https://github.com/jtroo/kanata/tree/4f8972b)
-* Fix crash when including file that doesn't exist [#25](https://github.com/rszyma/vscode-kanata/issues/25)
+* Fix crash when including file that doesn't exist ([#25](https://github.com/rszyma/vscode-kanata/issues/25))
 
 ### 0.9.27
 

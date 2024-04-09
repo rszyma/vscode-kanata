@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [a3852af](https://github.com/jtroo/kanata/tree/a3852af)
 
 ### 0.10.0
 

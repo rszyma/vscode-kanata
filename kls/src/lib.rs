@@ -4,14 +4,14 @@ use crate::{
 };
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
-use kanata_parser::cfg::{FileContentProvider, ParseError};
+use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
     request::{Formatting, Request},
-    DeleteFilesParams, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
+    DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, InitializeParams,
     PublishDiagnosticsParams, TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
@@ -27,7 +27,10 @@ use std::{
 use wasm_bindgen::prelude::*;
 
 mod helpers;
-use helpers::{empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents};
+use helpers::{
+    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents,
+    KlsParserOutput,
+};
 
 mod formatter;
 
@@ -75,7 +78,7 @@ impl Kanata {
         // Indicates whether the file is actually opened in VS Code workspace or, not.
         // regardles of what is WorkspaceOptions config option set to.
         is_opened_in_workspace: bool,
-    ) -> Result<(), CustomParseError> {
+    ) -> KlsParserOutput {
         let mut get_file_content_fn_impl = |_: &Path| {
             if is_opened_in_workspace {
                 Err(kanata_extension_error(["Includes currently can't be analyzed, because the support for it is disabled in the extension settings.",
@@ -104,7 +107,7 @@ impl Kanata {
         root_folder: &Url,
         main_cfg_file: &Path,
         all_documents: &Documents,
-    ) -> Result<(), CustomParseError> {
+    ) -> KlsParserOutput {
         log!(
             "kanata.parse_workspace for main_cfg_file={:?}",
             main_cfg_file
@@ -131,14 +134,24 @@ impl Kanata {
 
         let mut file_content_provider = FileContentProvider::new(&mut get_file_content_fn_impl);
 
-        let text = &file_content_provider
+        let text_or_not = &file_content_provider
             .get_file_content(main_cfg_file)
             .map_err(|e| {
                 CustomParseError::from_parse_error(
                     ParseError::new_without_span(e),
                     main_cfg_file.to_string_lossy().to_string().as_str(),
                 )
-            })?;
+            });
+
+        let text = match text_or_not {
+            Ok(text) => text,
+            Err(err) => {
+                return KlsParserOutput {
+                    errors: vec![err.clone()],
+                    inactive_codes: vec![],
+                }
+            }
+        };
 
         parse_wrapper(
             text,
@@ -549,14 +562,11 @@ impl KanataLanguageServer {
         }
     }
 
-    fn document_from_kanata_parse_error(
-        &self,
-        err: &CustomParseError,
-    ) -> anyhow::Result<Option<TextDocumentItem>> {
+    fn document_from_span(&self, span: &Span) -> anyhow::Result<Option<TextDocumentItem>> {
         let url: Url = match &self.workspace_options {
             WorkspaceOptions::Workspace { root, .. }
             | WorkspaceOptions::Single { root: Some(root) } => {
-                let filename = err.span.file_name();
+                let filename = span.file_name();
                 Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
             }
             WorkspaceOptions::Single { root: None } => match &self.documents.first_key_value() {
@@ -577,7 +587,7 @@ impl KanataLanguageServer {
                 "untracked doc: {}\nTracked: {:?}\nDiagnostic: {:?}",
                 url.to_string(),
                 tracked_docs_str,
-                err
+                span
             );
             Err(anyhow!("untracked doc"))
         }
@@ -589,9 +599,8 @@ impl KanataLanguageServer {
     ) -> (Option<TextDocumentItem>, Vec<Diagnostic>) {
         let (message, severity) = (err.msg.clone(), DiagnosticSeverity::ERROR);
 
-        let doc: Option<TextDocumentItem> = self
-            .document_from_kanata_parse_error(err)
-            .unwrap_or_else(|e| {
+        let doc: Option<TextDocumentItem> =
+            self.document_from_span(&err.span).unwrap_or_else(|e| {
                 log!(
                     "Error in `document_from_kanata_diagnostic_context`: {:?}",
                     e
@@ -629,20 +638,45 @@ impl KanataLanguageServer {
         (doc, diagnostics)
     }
 
-    fn parse_workspace(&self, main_config_file: &str, root: &Url) -> Vec<CustomParseError> {
+    fn diagnostics_from_inactive_code(
+        &self,
+        inactive: &LspHintInactiveCode,
+    ) -> (Option<TextDocumentItem>, Vec<Diagnostic>) {
+        let doc: Option<TextDocumentItem> =
+            self.document_from_span(&inactive.span).unwrap_or_else(|e| {
+                log!(
+                    "`diagnostics_from_inactive_code`: document not found '{:?}'",
+                    e
+                );
+                None
+            });
+
+        let mut diagnostics = vec![];
+
+        let range = lsp_range_from_span(&inactive.span);
+
+        diagnostics.push(Diagnostic {
+            range,
+            severity: Some(DiagnosticSeverity::HINT),
+            source: Some("kanata-parser".to_string()),
+            message: inactive.reason.clone(),
+            tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+            ..Default::default()
+        });
+
+        (doc, diagnostics)
+    }
+
+    fn parse_workspace(&self, main_config_file: &str, root: &Url) -> KlsParserOutput {
         log!("parse_workspace for main_config_file={}", main_config_file);
         let pb = PathBuf::from(main_config_file);
         let main_cfg_file = pb.as_path();
 
         self.kanata
             .parse_workspace(root, main_cfg_file, &self.documents)
-            .map(|_| None)
-            .unwrap_or_else(Some)
-            .into_iter()
-            .collect::<Vec<_>>()
     }
 
-    fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> Option<CustomParseError> {
+    fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> KlsParserOutput {
         let url_path_str = doc.uri.path();
         let main_cfg_filename: PathBuf = path::PathBuf::from_str(url_path_str)
             .expect("shoudn't error because it comes from Url");
@@ -653,8 +687,6 @@ impl KanataLanguageServer {
         };
         self.kanata
             .parse_single_file(&main_cfg_filename, main_cfg_text, is_opened_in_workspace)
-            .map(|_| None)
-            .unwrap_or_else(Some)
     }
 
     /// Returns empty diagnostics for all tracked docs.
@@ -684,21 +716,34 @@ impl KanataLanguageServer {
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 
-        let parse_errors = match &self.workspace_options {
-            WorkspaceOptions::Single { .. } => {
-                let results: Vec<_> = docs
-                    .iter()
-                    .filter_map(|doc| self.parse_a_single_file_in_workspace(doc))
-                    .collect::<Vec<_>>();
-                results
-            }
-            WorkspaceOptions::Workspace {
-                main_config_file,
-                root,
-            } => self.parse_workspace(main_config_file, root),
-        };
+        let (parse_errors, inactive_codes): (Vec<CustomParseError>, Vec<LspHintInactiveCode>) =
+            match &self.workspace_options {
+                WorkspaceOptions::Single { .. } => {
+                    let mut errs = vec![];
+                    let mut inactives = vec![];
+                    for doc in docs {
+                        let KlsParserOutput {
+                            errors,
+                            inactive_codes,
+                        } = self.parse_a_single_file_in_workspace(doc);
+                        errs.extend(errors);
+                        inactives.extend(inactive_codes);
+                    }
+                    (errs, inactives)
+                }
+                WorkspaceOptions::Workspace {
+                    main_config_file,
+                    root,
+                } => {
+                    let KlsParserOutput {
+                        errors,
+                        inactive_codes,
+                    } = self.parse_workspace(main_config_file, root);
+                    (errors, inactive_codes)
+                }
+            };
 
-        let new_diags = parse_errors
+        let new_error_diags = parse_errors
             .iter()
             .map(|e| self.diagnostics_from_kanata_parse_error(e))
             .fold(Diagnostics::new(), |mut acc, (doc_or_not, diag)| {
@@ -727,8 +772,39 @@ impl KanataLanguageServer {
                 acc
             });
 
+        // TODO: merge with code above
+        let new_inactive_codes_diags = inactive_codes
+            .iter()
+            .map(|span| self.diagnostics_from_inactive_code(span))
+            .fold(Diagnostics::new(), |mut acc, (doc_or_not, diag)| {
+                match doc_or_not {
+                    Some(doc) => {
+                        log!("added diagnostic for document: {}", doc.uri.as_str());
+                        let url: &Url = &doc.uri;
+
+                        let mut diags = acc.get(url).map(|x| x.to_owned()).unwrap_or(
+                            PublishDiagnosticsParams::new(
+                                url.to_owned(),
+                                vec![],
+                                Some(doc.version),
+                            ),
+                        );
+
+                        diags.diagnostics.extend(diag);
+                        acc.insert(url.to_owned(), diags.to_owned());
+                    }
+                    None => {
+                        // This shouldn't happen, as earlier we've made sure that spans
+                        // without assigned file have instead assigned main file as fallback.
+                        log!("skipped diagnostic not bound to any document: {:?}", diag);
+                    }
+                };
+                acc
+            });
+
         let mut diagnostics = self.empty_diagnostics_for_all_documents();
-        diagnostics.extend(new_diags);
+        diagnostics.extend(new_error_diags);
+        diagnostics.extend(new_inactive_codes_diags);
         diagnostics
     }
 }

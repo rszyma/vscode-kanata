@@ -163,7 +163,7 @@ class Extension implements Disposable {
         }>("vscode-kanata.environmentVariables", {}),
         dimInactiveConfigItems: workspace
           .getConfiguration()
-          .get<boolean>("vscode-kanata.includesAndWorkspaces", true),
+          .get<boolean>("vscode-kanata.dimInactiveConfigItems", true),
       },
     };
 

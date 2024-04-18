@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* Gray-out inactive configuration items (such as `deflocalkeys-*`, `defaliasenvcond`, `platform`) ([#30](https://github.com/rszyma/vscode-kanata/issues/30))
 * Updated kanata to [d92b40a](https://github.com/jtroo/kanata/tree/d92b40a)
 
 ### 0.10.3

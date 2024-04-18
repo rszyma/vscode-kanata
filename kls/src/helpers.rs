@@ -114,7 +114,7 @@ pub fn parse_wrapper(
     env_vars: &Vec<(String, String)>,
 ) -> KlsParserOutput {
     let mut result = KlsParserOutput::default();
-    let parsed_state = &mut kanata_parser::cfg::ParsedState::default();
+    let parsed_state = &mut kanata_parser::cfg::ParserState::default();
     let _ = kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
         parsed_state,

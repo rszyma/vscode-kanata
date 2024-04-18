@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path, rc::Rc};
 
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
+use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
 use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
@@ -100,16 +100,24 @@ pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
     }
 }
 
+#[derive(Default)]
+pub struct KlsParserOutput {
+    pub errors: Vec<CustomParseError>,
+    pub inactive_codes: Vec<LspHintInactiveCode>,
+}
+
 pub fn parse_wrapper(
     main_cfg_text: &str,
     main_cfg_path: &Path,
     file_content_provider: &mut FileContentProvider,
     def_local_keys_variant_to_apply: &str,
     env_vars: &Vec<(String, String)>,
-) -> Result<(), CustomParseError> {
-    kanata_parser::cfg::parse_cfg_raw_string(
+) -> KlsParserOutput {
+    let mut result = KlsParserOutput::default();
+    let parsed_state = &mut kanata_parser::cfg::ParserState::default();
+    let _ = kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
-        &mut kanata_parser::cfg::ParsedState::default(),
+        parsed_state,
         main_cfg_path,
         file_content_provider,
         def_local_keys_variant_to_apply,
@@ -120,17 +128,21 @@ pub fn parse_wrapper(
             "parsed file `{}` without errors",
             main_cfg_path.to_string_lossy(),
         );
-        // Ignoring the non-error parser result for now.
+        result
+            .inactive_codes
+            .extend(parsed_state.lsp_hint_inactive_code.clone());
     })
     .map_err(|e: ParseError| {
-        CustomParseError::from_parse_error(e, main_cfg_path.to_string_lossy().to_string().as_str())
-    })
-    .map_err(|e| {
+        let e = CustomParseError::from_parse_error(
+            e,
+            main_cfg_path.to_string_lossy().to_string().as_str(),
+        );
+        result.errors.push(e.clone());
         log!(
             "parsing file `{}` resulted in error: `{}`",
             e.span.clone().file_name(),
             e.msg,
         );
-        e
-    })
+    });
+    result
 }

@@ -184,6 +184,8 @@ struct Config {
     format: ExtensionFormatterOptions,
     #[serde(rename = "envVariables")]
     env_variables: HashMap<String, String>,
+    #[serde(rename = "dimInactiveConfigItems")]
+    dim_inactive_config_items: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -256,6 +258,7 @@ pub struct KanataLanguageServer {
     workspace_options: WorkspaceOptions,
     send_diagnostics_callback: js_sys::Function,
     formatter: formatter::Formatter,
+    dim_inactive_config_items: bool,
 }
 
 /// Public API exposed via WASM.
@@ -308,6 +311,7 @@ impl KanataLanguageServer {
             },
             workspace_options,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
+            dim_inactive_config_items: config.dim_inactive_config_items,
         }
 
         // self_.reload_diagnostics_debouncer =
@@ -804,7 +808,9 @@ impl KanataLanguageServer {
 
         let mut diagnostics = self.empty_diagnostics_for_all_documents();
         diagnostics.extend(new_error_diags);
-        diagnostics.extend(new_inactive_codes_diags);
+        if self.dim_inactive_config_items {
+            diagnostics.extend(new_inactive_codes_diags);
+        }
         diagnostics
     }
 }

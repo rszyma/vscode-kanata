@@ -118,6 +118,11 @@
             "type": "string"
           },
           "markdownDescription": "Environment variables to pass to kanata parser to use in `defaliasenvcond`."
+        },
+        "vscode-kanata.format.dimInactiveConfigItems": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Gray-out configuration items that are not applicable with the current settings (`deflocalkeys-*`, `defaliasenvcond`, `platform`)"
         }
       }
     }

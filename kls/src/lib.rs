@@ -57,9 +57,9 @@ impl Kanata {
         {
             *kanata_parser::keys::OSCODE_MAPPING_VARIANT.lock() =
                 match def_local_keys_variant_to_apply {
-                    DefLocalKeysVariant::Win | DefLocalKeysVariant::Wintercept => {
-                        kanata_parser::keys::Platform::Win
-                    }
+                    DefLocalKeysVariant::Win
+                    | DefLocalKeysVariant::Wintercept
+                    | DefLocalKeysVariant::WinIOv2 => kanata_parser::keys::Platform::Win,
                     DefLocalKeysVariant::Linux => kanata_parser::keys::Platform::Linux,
                     DefLocalKeysVariant::MacOS => kanata_parser::keys::Platform::Macos,
                 };
@@ -206,6 +206,8 @@ enum DefLocalKeysVariant {
     Linux,
     #[serde(rename = "deflocalkeys-macos")]
     MacOS,
+    #[serde(rename = "deflocalkeys-winiov2")]
+    WinIOv2,
 }
 
 impl Display for DefLocalKeysVariant {
@@ -215,6 +217,7 @@ impl Display for DefLocalKeysVariant {
             DefLocalKeysVariant::Wintercept => f.write_str("deflocalkeys-wintercept"),
             DefLocalKeysVariant::Linux => f.write_str("deflocalkeys-linux"),
             DefLocalKeysVariant::MacOS => f.write_str("deflocalkeys-macos"),
+            DefLocalKeysVariant::WinIOv2 => f.write_str("deflocalkeys-winiov2"),
         }
     }
 }

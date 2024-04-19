@@ -243,7 +243,8 @@ type LocalKeysVariant =
   | "deflocalkeys-win"
   | "deflocalkeys-wintercept"
   | "deflocalkeys-linux"
-  | "deflocalkeys-macos";
+  | "deflocalkeys-macos"
+  | "deflocalkeys-winiov2";
 
 // Gets localkeys variant from config and when set to auto, detects it based on current OS.
 function getLocalKeysVariant(): LocalKeysVariant {
@@ -257,7 +258,7 @@ function getLocalKeysVariant(): LocalKeysVariant {
         return "deflocalkeys-linux";
       case "darwin":
         return "deflocalkeys-macos";
-      default: // Catches both unsupported systems as well as windows, since there are 2 possible variants for windows.
+      default: // Catches both unsupported systems as well as windows, since there are 3 possible variants for windows.
         showLocalkeysManualInterventionNeeded()
           .then(null)
           .catch((e) => {

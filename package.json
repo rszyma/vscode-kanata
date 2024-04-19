@@ -95,6 +95,7 @@
           "enum": [
             "deflocalkeys-win",
             "deflocalkeys-wintercept",
+            "deflocalkeys-winiov2",
             "deflocalkeys-linux",
             "deflocalkeys-macos"
           ],

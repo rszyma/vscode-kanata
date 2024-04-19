@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated syntax highlighting spec up to ([d92b40a](https://github.com/jtroo/kanata/tree/d92b40a))
 
 ### 0.11.0
 

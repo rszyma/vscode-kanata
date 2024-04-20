@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.11.1
+
 * Updated kanata to [1835f06](https://github.com/jtroo/kanata/tree/1835f06)
 * Updated syntax highlighting spec up to ([d92b40a](https://github.com/jtroo/kanata/tree/d92b40a))
 * Added support for `deflocalkeys-winiov2`

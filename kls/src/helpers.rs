@@ -221,14 +221,18 @@ pub fn parse_wrapper(
         def_local_keys_variant_to_apply,
         Ok(env_vars.to_owned()),
     )
-    .map(|icfg| {
+    .map(|_| {
         log!(
             "parsed file `{}` without errors",
             main_cfg_path.to_string_lossy(),
         );
-        result.inactive_codes.extend(icfg.lsp_hints.inactive_code);
-        result.definition_locations = DefinitionLocations(icfg.lsp_hints.definition_locations);
-        result.reference_locations = ReferenceLocations(icfg.lsp_hints.reference_locations);
+        result
+            .inactive_codes
+            .extend(parsed_state.lsp_hints.borrow().inactive_code.clone());
+        result.definition_locations =
+            DefinitionLocations(parsed_state.lsp_hints.borrow().definition_locations.clone());
+        result.reference_locations =
+            ReferenceLocations(parsed_state.lsp_hints.borrow().reference_locations.clone());
     })
     .map_err(|e: ParseError| {
         let e = CustomParseError::from_parse_error(

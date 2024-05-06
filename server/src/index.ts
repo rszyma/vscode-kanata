@@ -21,6 +21,7 @@ connection.onInitialize((params: InitializeParams) => {
   connection.onDocumentFormatting((...args) =>
     kls.onDocumentFormatting(...args),
   );
+  connection.onDefinition((...args) => kls.onDefinition(...args));
 
   return {
     capabilities: {
@@ -41,6 +42,7 @@ connection.onInitialize((params: InitializeParams) => {
           },
         },
       },
+      definitionProvider: true,
     },
   };
 });

@@ -1,9 +1,11 @@
 _default:
     @just -l --unsorted
 
-install:
+build:
     git submodule update
     make package
+
+install: build
     code --install-extension kanata.vsix --force
 
 install_release:
@@ -42,10 +44,10 @@ release VERSION:
     git tag v{{VERSION}}
     git push --tags
 
-use_local_repo:
+use_local_parser:
     sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml
 
-use_origin_repo:
+use_remote_parser:
     sed -i 's/kanata-local\/parser/kanata\/parser/' kls/Cargo.toml
 
 _add_to_changelog TEXT:

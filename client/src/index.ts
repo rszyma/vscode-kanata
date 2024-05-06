@@ -20,13 +20,25 @@ import {
 import {
   LanguageClient,
   LanguageClientOptions,
+  ServerOptions,
   SettingMonitor,
   TransportKind,
   MessageActionItem,
+  DocumentSelector,
 } from "vscode-languageclient/node";
 
 const extensionName = "Kanata Configuration Language";
 const outputChannel = window.createOutputChannel(extensionName);
+
+const docSelector: DocumentSelector = [
+  {
+    scheme: "file",
+    language: "kanata",
+    pattern: "**/*.kbd",
+  },
+];
+
+// const defProvider: DefinitionProvider = new Provider(context);
 
 // global extension instance
 let ext: Extension;
@@ -44,9 +56,6 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
           fileName,
           ConfigurationTarget.Workspace,
         );
-        // await window.showInformationMessage(
-        //   `Set vscode-kanata.mainConfigFile to ${fileName}`
-        // );
       } else {
         await window.showErrorMessage("No active editor");
       }
@@ -77,6 +86,10 @@ class Extension implements Disposable {
     this.ctx.subscriptions.push(
       workspace.onDidChangeConfiguration(this.restart()),
     );
+
+    // this.ctx.subscriptions.push(
+    //   languages.registerDefinitionProvider(docSelector, defProvider),
+    // );
   }
 
   async start() {
@@ -134,17 +147,13 @@ class Extension implements Disposable {
       this.toDisposeOnRestart.push(changeWatcher.onDidChange(openDocument));
     }
 
-    const serverOpts = {
+    const serverOpts: ServerOptions = {
       module: serverModulePath,
       transport: TransportKind.ipc,
     };
 
-    const localKeysVariant = getLocalKeysVariant();
-
     const clientOpts: LanguageClientOptions = {
-      documentSelector: [
-        { scheme: "file", language: "kanata", pattern: "**/*.kbd" },
-      ],
+      documentSelector: docSelector,
       synchronize: { fileEvents: deleteWatcher },
       diagnosticCollectionName: extensionName,
       workspaceFolder: root,
@@ -156,7 +165,7 @@ class Extension implements Disposable {
         includesAndWorkspaces: workspace
           .getConfiguration()
           .get<string>("vscode-kanata.includesAndWorkspaces", ""),
-        localKeysVariant: localKeysVariant as string,
+        localKeysVariant: getLocalKeysVariant() as string,
         format: getFormatterSettings(),
         envVariables: workspace.getConfiguration().get<{
           [id: string]: string;

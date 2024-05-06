@@ -1,6 +1,6 @@
 use crate::{
     formatter::defsrc_layout::LineEndingSequence,
-    helpers::{lsp_range_from_span, HashSet},
+    helpers::{lsp_range_from_span, path_to_url, HashSet},
 };
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
@@ -10,11 +10,12 @@ use lsp_types::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, Request},
+    request::{Formatting, GotoDefinition, Request},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, InitializeParams,
-    PublishDiagnosticsParams, TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
+    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, GotoDefinitionParams,
+    GotoDefinitionResponse, InitializeParams, LocationLink, Position, PublishDiagnosticsParams,
+    TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -28,11 +29,12 @@ use wasm_bindgen::prelude::*;
 
 mod helpers;
 use helpers::{
-    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents,
-    KlsParserOutput,
+    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, DefinitionLocations, Diagnostics,
+    Documents, KlsParserOutput, ReferenceLocations,
 };
 
 mod formatter;
+mod navigation;
 
 struct Kanata {
     def_local_keys_variant_to_apply: String,
@@ -148,7 +150,7 @@ impl Kanata {
             Err(err) => {
                 return KlsParserOutput {
                     errors: vec![err.clone()],
-                    inactive_codes: vec![],
+                    ..Default::default()
                 }
             }
         };
@@ -161,16 +163,6 @@ impl Kanata {
             &self.env_vars,
         )
     }
-}
-
-fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {
-    let file_url = if path.is_absolute() {
-        Url::from_str(format!("file://{}", path.to_string_lossy()).as_ref())
-            .map_err(|_| anyhow!("invalid path"))?
-    } else {
-        Url::join(root_folder, &path.to_string_lossy())?
-    };
-    Ok(file_url)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -344,7 +336,7 @@ impl KanataLanguageServer {
                     log!("reopened tracked doc");
                 }
 
-                let diagnostics = self.get_diagnostics();
+                let (diagnostics, _, _) = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
             // We don't care when a document is closed -- we care about all Kanata files in a
@@ -419,7 +411,7 @@ impl KanataLanguageServer {
                     log!("detected file deletion: {}", uri);
                     let removed_docs = self.remove_tracked_documents_in_dir(&uri);
                     if !removed_docs.is_empty() {
-                        let diagnostics = self.get_diagnostics();
+                        let (diagnostics, _, _) = self.parse();
                         self.send_diagnostics(&diagnostics);
                     }
                 }
@@ -427,7 +419,7 @@ impl KanataLanguageServer {
 
             DidSaveTextDocument::METHOD => {
                 let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
-                let diagnostics = self.get_diagnostics();
+                let (diagnostics, _, _) = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
 
@@ -499,6 +491,98 @@ impl KanataLanguageServer {
             range,
             new_text: tree.to_string(),
         }])
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDefinition)]
+    pub fn on_go_to_definition(&mut self, params: JsValue) -> JsValue {
+        type Params = <GotoDefinition as Request>::Params;
+        type Result = <GotoDefinition as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
+    }
+
+    /// Returns None on error.
+    fn on_go_to_definition_impl(
+        &mut self,
+        params: &GotoDefinitionParams,
+    ) -> Option<GotoDefinitionResponse> {
+        let (_, definition_locations_storage, reference_locations_storage) = self.parse();
+        let source_doc_uri = &params.text_document_position_params.text_document.uri;
+        let definition_link = match navigation::goto_definition(
+            &params.text_document_position_params.position,
+            definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+            reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+        ) {
+            Some(x) => x,
+            None => {
+                return Some(GotoDefinitionResponse::Link(self.on_references(
+                    &params.text_document_position_params.position,
+                    source_doc_uri,
+                )?))
+            }
+        };
+        log!("goto_definition result: {:#?}", definition_link);
+        let target_uri: Url = match &self.workspace_options {
+            WorkspaceOptions::Single { root } => root.clone().unwrap_or(source_doc_uri.clone()),
+            WorkspaceOptions::Workspace { root, .. } => {
+                match path_to_url(Path::new(&definition_link.target_filename), root) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        log!("goto definition failed: {}", err);
+                        return None;
+                    }
+                }
+            }
+        };
+        Some(GotoDefinitionResponse::Link(vec![LocationLink {
+            origin_selection_range: Some(definition_link.source_range),
+            target_uri,
+            target_range: definition_link.target_range,
+            target_selection_range: definition_link.target_range,
+        }]))
+    }
+
+    /// Returns None on error.
+    fn on_references(
+        &mut self,
+        position: &Position,
+        source_doc_uri: &Url,
+    ) -> Option<Vec<LocationLink>> {
+        let (_, definition_locations_storage, reference_locations_storage) = self.parse();
+        let references = navigation::references(
+            position,
+            definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+            // We don't provide uri locations for mulitple files in Single mode, besides current file,
+            // because that's unsupported, similar to how includes in Single mode are unsupported.
+            // We're not going to even provide error message here, because parser is going to fail anyway.
+            reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+        )?;
+        references
+            .iter()
+            .try_fold(vec![], |mut acc, reference_link| {
+                let target_uri: Url = match &self.workspace_options {
+                    WorkspaceOptions::Single { root } => {
+                        root.clone().unwrap_or(source_doc_uri.clone())
+                    }
+                    WorkspaceOptions::Workspace { root, .. } => {
+                        match path_to_url(Path::new(&reference_link.target_filename), root) {
+                            Ok(x) => x,
+                            Err(err) => {
+                                log!("reference failed: {}", err);
+                                return None;
+                            }
+                        }
+                    }
+                };
+                acc.push(LocationLink {
+                    origin_selection_range: Some(reference_link.source_range),
+                    target_uri,
+                    target_range: reference_link.target_range,
+                    target_selection_range: reference_link.target_range,
+                });
+                Some(acc)
+            })
     }
 }
 
@@ -713,9 +797,13 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    /// Gets up-to-date diagnostics from kanata-parser.
-    /// All previously set diagnostics will be cleared.
-    fn get_diagnostics(&self) -> Diagnostics {
+    fn parse(
+        &self,
+    ) -> (
+        Diagnostics,
+        UnifiedOrMultiple<DefinitionLocations>,
+        UnifiedOrMultiple<ReferenceLocations>,
+    ) {
         let docs = self
             .documents
             .values()
@@ -723,32 +811,54 @@ impl KanataLanguageServer {
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 
-        let (parse_errors, inactive_codes): (Vec<CustomParseError>, Vec<LspHintInactiveCode>) =
-            match &self.workspace_options {
-                WorkspaceOptions::Single { .. } => {
-                    let mut errs = vec![];
-                    let mut inactives = vec![];
-                    for doc in docs {
-                        let KlsParserOutput {
-                            errors,
-                            inactive_codes,
-                        } = self.parse_a_single_file_in_workspace(doc);
-                        errs.extend(errors);
-                        inactives.extend(inactive_codes);
-                    }
-                    (errs, inactives)
-                }
-                WorkspaceOptions::Workspace {
-                    main_config_file,
-                    root,
-                } => {
+        let (parse_errors, inactive_codes, identifiers, references): (
+            Vec<CustomParseError>,
+            Vec<LspHintInactiveCode>,
+            UnifiedOrMultiple<DefinitionLocations>,
+            UnifiedOrMultiple<ReferenceLocations>,
+        ) = match &self.workspace_options {
+            WorkspaceOptions::Single { .. } => {
+                let mut errs = vec![];
+                let mut inactives = vec![];
+                let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
+                let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+                for doc in docs {
                     let KlsParserOutput {
                         errors,
                         inactive_codes,
-                    } = self.parse_workspace(main_config_file, root);
-                    (errors, inactive_codes)
+                        definition_locations,
+                        reference_locations,
+                    } = self.parse_a_single_file_in_workspace(doc);
+                    errs.extend(errors);
+                    inactives.extend(inactive_codes);
+                    definitions.insert(doc.uri.clone(), definition_locations);
+                    references.insert(doc.uri.clone(), reference_locations);
                 }
-            };
+                (
+                    errs,
+                    inactives,
+                    UnifiedOrMultiple::Multiple(definitions),
+                    UnifiedOrMultiple::Multiple(references),
+                )
+            }
+            WorkspaceOptions::Workspace {
+                main_config_file,
+                root,
+            } => {
+                let KlsParserOutput {
+                    errors,
+                    inactive_codes,
+                    definition_locations,
+                    reference_locations,
+                } = self.parse_workspace(main_config_file, root);
+                (
+                    errors,
+                    inactive_codes,
+                    UnifiedOrMultiple::Unified(definition_locations),
+                    UnifiedOrMultiple::Unified(reference_locations),
+                )
+            }
+        };
 
         let new_error_diags = parse_errors
             .iter()
@@ -814,6 +924,22 @@ impl KanataLanguageServer {
         if self.dim_inactive_config_items {
             diagnostics.extend(new_inactive_codes_diags);
         }
-        diagnostics
+        (diagnostics, identifiers, references)
+    }
+}
+
+enum UnifiedOrMultiple<T> {
+    // Store items per-file
+    Multiple(HashMap<Url, T>),
+    // Store items combined
+    Unified(T),
+}
+
+impl<T> UnifiedOrMultiple<T> {
+    fn for_uri_for_multiple(&self, uri: &Url) -> Option<&T> {
+        match self {
+            UnifiedOrMultiple::Multiple(hashmap) => hashmap.get(uri),
+            UnifiedOrMultiple::Unified(x) => Some(x),
+        }
     }
 }

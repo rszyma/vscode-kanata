@@ -143,12 +143,12 @@ impl ReferenceLocations {
     ) -> Option<LocationInfo> {
         log!("looking for definitions @ {:?}", pos);
         for ((name, spans), ref_kind) in chain!(
-            zip(&self.0.alias, repeat(ReferenceKind::Alias)),
-            zip(&self.0.variable, repeat(ReferenceKind::Variable)),
-            zip(&self.0.virtual_key, repeat(ReferenceKind::VirtualKey)),
-            zip(&self.0.chord_group, repeat(ReferenceKind::ChordGroup)),
-            zip(&self.0.layer, repeat(ReferenceKind::Layer)),
-            zip(&self.0.include, repeat(ReferenceKind::Include)),
+            zip(&self.0.alias.0, repeat(ReferenceKind::Alias)),
+            zip(&self.0.variable.0, repeat(ReferenceKind::Variable)),
+            zip(&self.0.virtual_key.0, repeat(ReferenceKind::VirtualKey)),
+            zip(&self.0.chord_group.0, repeat(ReferenceKind::ChordGroup)),
+            zip(&self.0.layer.0, repeat(ReferenceKind::Layer)),
+            zip(&self.0.include.0, repeat(ReferenceKind::Include)),
         ) {
             for span in spans {
                 let range = lsp_range_from_span(span);

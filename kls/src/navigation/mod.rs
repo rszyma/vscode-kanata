@@ -69,7 +69,7 @@ pub fn references(
         Include => unreachable!("includes can't be backreferenced"),
     };
 
-    location_map.get(&location_info.ref_name).map(|spans| {
+    location_map.0.get(&location_info.ref_name).map(|spans| {
         spans
             .iter()
             .map(|span| GotoDefinitionLink {

@@ -8,7 +8,8 @@ use std::{
 
 use anyhow::anyhow;
 use itertools::chain;
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
+use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
+use kanata_parser::lsp_hints::InactiveCode;
 use lsp_types::{PublishDiagnosticsParams, Range, TextDocumentItem, Url};
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
@@ -100,7 +101,7 @@ pub struct LocationInfo {
 }
 
 #[derive(Debug, Default)]
-pub struct DefinitionLocations(pub kanata_parser::cfg::DefinitionLocations);
+pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
 
 impl DefinitionLocations {
     // Returns kind of reference and it's name at given position.
@@ -114,7 +115,6 @@ impl DefinitionLocations {
             zip(&self.0.layer, repeat(ReferenceKind::Layer)),
         ) {
             let range = lsp_range_from_span(span);
-            log!("comparing range {:?}", range);
             if pos.line >= range.start.line
                 && pos.line <= range.end.line
                 && pos.character >= range.start.character
@@ -133,7 +133,7 @@ impl DefinitionLocations {
 }
 
 #[derive(Debug, Default)]
-pub struct ReferenceLocations(pub kanata_parser::cfg::ReferenceLocations);
+pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
 
 impl ReferenceLocations {
     // Returns kind of definiiton and it's name at given position.
@@ -152,7 +152,6 @@ impl ReferenceLocations {
         ) {
             for span in spans {
                 let range = lsp_range_from_span(span);
-                log!("comparing range {:?}", range);
                 if pos.line >= range.start.line
                     && pos.line <= range.end.line
                     && pos.character >= range.start.character
@@ -199,7 +198,7 @@ pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
 #[derive(Default)]
 pub struct KlsParserOutput {
     pub errors: Vec<CustomParseError>,
-    pub inactive_codes: Vec<LspHintInactiveCode>,
+    pub inactive_codes: Vec<InactiveCode>,
     pub definition_locations: DefinitionLocations,
     pub reference_locations: ReferenceLocations,
 }

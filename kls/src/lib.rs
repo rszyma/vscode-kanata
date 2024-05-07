@@ -4,7 +4,10 @@ use crate::{
 };
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
+use kanata_parser::{
+    cfg::{sexpr::Span, FileContentProvider, ParseError},
+    lsp_hints::InactiveCode,
+};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
@@ -731,7 +734,7 @@ impl KanataLanguageServer {
 
     fn diagnostics_from_inactive_code(
         &self,
-        inactive: &LspHintInactiveCode,
+        inactive: &InactiveCode,
     ) -> (Option<TextDocumentItem>, Vec<Diagnostic>) {
         let doc: Option<TextDocumentItem> =
             self.document_from_span(&inactive.span).unwrap_or_else(|e| {
@@ -813,7 +816,7 @@ impl KanataLanguageServer {
 
         let (parse_errors, inactive_codes, identifiers, references): (
             Vec<CustomParseError>,
-            Vec<LspHintInactiveCode>,
+            Vec<InactiveCode>,
             UnifiedOrMultiple<DefinitionLocations>,
             UnifiedOrMultiple<ReferenceLocations>,
         ) = match &self.workspace_options {

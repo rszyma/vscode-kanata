@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [13eaddd](https://github.com/jtroo/kanata/tree/13eaddd)
 
 ### 0.11.13
 

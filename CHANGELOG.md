@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.11.14
+
 * Updated kanata to [13eaddd](https://github.com/jtroo/kanata/tree/13eaddd)
 
 ### 0.11.13

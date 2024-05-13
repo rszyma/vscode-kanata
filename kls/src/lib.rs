@@ -519,13 +519,15 @@ impl KanataLanguageServer {
         ) {
             Some(x) => x,
             None => {
-                return Some(GotoDefinitionResponse::Link(self.on_references(
+                return Some(GotoDefinitionResponse::Link(self.on_references_impl(
                     &params.text_document_position_params.position,
                     source_doc_uri,
+                    definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+                    reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
                 )?))
             }
         };
-        log!("goto_definition result: {:#?}", definition_link);
+        log!("definition found: {:#?}", definition_link);
         let target_uri: Url = match &self.workspace_options {
             WorkspaceOptions::Single { root } => root.clone().unwrap_or(source_doc_uri.clone()),
             WorkspaceOptions::Workspace { root, .. } => {
@@ -547,20 +549,16 @@ impl KanataLanguageServer {
     }
 
     /// Returns None on error.
-    fn on_references(
+    fn on_references_impl(
         &mut self,
         position: &Position,
         source_doc_uri: &Url,
+        identifier_locations: &DefinitionLocations,
+        reference_locations: &ReferenceLocations,
     ) -> Option<Vec<LocationLink>> {
-        let (_, definition_locations_storage, reference_locations_storage) = self.parse();
-        let references = navigation::references(
-            position,
-            definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
-            // We don't provide uri locations for mulitple files in Single mode, besides current file,
-            // because that's unsupported, similar to how includes in Single mode are unsupported.
-            // We're not going to even provide error message here, because parser is going to fail anyway.
-            reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
-        )?;
+        let references =
+            navigation::references(position, identifier_locations, reference_locations)?;
+        log!("reference(s) found: {:#?}", references);
         references
             .iter()
             .try_fold(vec![], |mut acc, reference_link| {

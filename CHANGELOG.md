@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.11.16
+
 * Updated kanata to [8730678](https://github.com/jtroo/kanata/tree/8730678)
 
 ### 0.11.15

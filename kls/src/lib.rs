@@ -510,8 +510,10 @@ impl KanataLanguageServer {
         &mut self,
         params: &GotoDefinitionParams,
     ) -> Option<GotoDefinitionResponse> {
+        log!("========= on_go_to_definition_impl ========");
         let (_, definition_locations_storage, reference_locations_storage) = self.parse();
         let source_doc_uri = &params.text_document_position_params.text_document.uri;
+
         let definition_link = match navigation::goto_definition(
             &params.text_document_position_params.position,
             definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,

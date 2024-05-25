@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* Updated kanata to [c965cef](https://github.com/jtroo/kanata/tree/c965cef)
+* Updated kanata to [96d6d08](https://github.com/jtroo/kanata/tree/96d6d08)
 
 ### 0.11.18
 

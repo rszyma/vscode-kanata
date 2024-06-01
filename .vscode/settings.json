@@ -1,8 +1,19 @@
 {
     "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
-    "rust-analyzer.cargo.features": "all",
+    // https://github.com/rust-lang/rust-analyzer/issues/10298
+    // "rust-analyzer.cargo.features": [
+    //     "cmd",
+    //     "gui",
+    //     "interception_driver"
+    // ],
     "eslint.format.enable": true,
     "[typescript]": {
         "editor.defaultFormatter": "dbaeumer.vscode-eslint"
     },
+    // https://github.com/rust-lang/rust-analyzer/issues/8521
+    // "rust-analyzer.linkedProjects": [
+    //     "./kls/Cargo.toml",
+    //     "./kanata-local/parser/Cargo.toml",
+    //     "./kanata/parser/Cargo.toml",
+    // ],
 }

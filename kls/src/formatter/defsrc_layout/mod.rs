@@ -1,6 +1,8 @@
+use std::fmt::Display;
+
 use super::ext_tree::*;
 use crate::log;
-use anyhow::{anyhow, Ok};
+use anyhow::anyhow;
 use unicode_segmentation::*;
 
 pub mod get_layout;
@@ -314,12 +316,13 @@ pub enum LineEndingSequence {
     CRLF,
 }
 
-impl ToString for LineEndingSequence {
-    fn to_string(&self) -> String {
+impl Display for LineEndingSequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LineEndingSequence::LF => "\n".to_string(),
-            LineEndingSequence::CRLF => "\r\n".to_string(),
-        }
+            LineEndingSequence::LF => f.write_str("\n"),
+            LineEndingSequence::CRLF => f.write_str("\r\n"),
+        }?;
+        Ok(())
     }
 }
 

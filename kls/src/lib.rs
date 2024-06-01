@@ -1,3 +1,8 @@
+extern crate wee_alloc;
+
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 use crate::{
     formatter::defsrc_layout::LineEndingSequence,
     helpers::{lsp_range_from_span, path_to_url, HashSet},

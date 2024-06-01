@@ -4,6 +4,46 @@
 
 * no changes yet
 
+### 0.11.21
+
+* Updated kanata to [d45b8cc](https://github.com/jtroo/kanata/tree/d45b8cc)
+
+### 0.11.20
+
+* Updated kanata to [6adef03](https://github.com/jtroo/kanata/tree/6adef03)
+
+### 0.11.19
+
+* Updated kanata to [96d6d08](https://github.com/jtroo/kanata/tree/96d6d08)
+
+### 0.11.18
+
+* Updated kanata to [e4efbd9](https://github.com/jtroo/kanata/tree/e4efbd9)
+
+### 0.11.17
+
+* Updated kanata to [483eb47](https://github.com/jtroo/kanata/tree/483eb47)
+
+### 0.11.16
+
+* Updated kanata to [8730678](https://github.com/jtroo/kanata/tree/8730678)
+
+### 0.11.15
+
+* Updated kanata to [520ab00](https://github.com/jtroo/kanata/tree/520ab00)
+
+### 0.11.14
+
+* Updated kanata to [13eaddd](https://github.com/jtroo/kanata/tree/13eaddd)
+
+### 0.11.13
+
+* Updated kanata to [5df06b3](https://github.com/jtroo/kanata/tree/5df06b3)
+
+### 0.11.12
+
+* Updated kanata to [2a11bb0](https://github.com/jtroo/kanata/tree/2a11bb0)
+
 ### 0.11.11
 
 * Updated kanata to [74692e5](https://github.com/jtroo/kanata/tree/74692e5)

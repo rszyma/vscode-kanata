@@ -105,7 +105,6 @@ pub struct LocationInfo {
 pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
 
 impl DefinitionLocations {
-    // Returns kind of reference and it's name at given position.
     pub fn search_references_at_position(&self, pos: &lsp_types::Position) -> Option<LocationInfo> {
         log!("looking for references @ {:?}", pos);
         for ((name, span), ref_kind) in chain!(
@@ -137,7 +136,6 @@ impl DefinitionLocations {
 pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
 
 impl ReferenceLocations {
-    // Returns kind of definiiton and it's name at given position.
     pub fn search_definitions_at_position(
         &self,
         pos: &lsp_types::Position,

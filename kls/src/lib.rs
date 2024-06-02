@@ -516,21 +516,22 @@ impl KanataLanguageServer {
         params: &GotoDefinitionParams,
     ) -> Option<GotoDefinitionResponse> {
         log!("========= on_go_to_definition_impl ========");
-        let (_, definition_locations_storage, reference_locations_storage) = self.parse();
+        let (_, definition_locations_per_doc, reference_locations_per_doc) = self.parse();
         let source_doc_uri = &params.text_document_position_params.text_document.uri;
 
-        let definition_link = match navigation::goto_definition(
+        let definition_link = match navigation::definition_location(
             &params.text_document_position_params.position,
-            definition_locations_storage.get(source_doc_uri)?,
-            reference_locations_storage.get(source_doc_uri)?,
+            source_doc_uri,
+            &definition_locations_per_doc,
+            &reference_locations_per_doc,
         ) {
             Some(x) => x,
             None => {
                 return Some(GotoDefinitionResponse::Link(self.on_references_impl(
                     &params.text_document_position_params.position,
                     source_doc_uri,
-                    definition_locations_storage.get(source_doc_uri)?,
-                    reference_locations_storage.get(source_doc_uri)?,
+                    &definition_locations_per_doc,
+                    &reference_locations_per_doc,
                 )?))
             }
         };
@@ -560,11 +561,15 @@ impl KanataLanguageServer {
         &mut self,
         position: &Position,
         source_doc_uri: &Url,
-        identifier_locations: &DefinitionLocations,
-        reference_locations: &ReferenceLocations,
+        definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
+        reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
     ) -> Option<Vec<LocationLink>> {
-        let references =
-            navigation::references(position, identifier_locations, reference_locations)?;
+        let references = navigation::references(
+            position,
+            source_doc_uri,
+            definition_locations_by_doc,
+            reference_locations_by_doc,
+        )?;
         log!("matching reference(s) found: {:#?}", references);
         references
             .iter()

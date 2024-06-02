@@ -36,6 +36,7 @@ pub fn definition_location(
             VirtualKey => &definition_locations.0.virtual_key,
             ChordGroup => &definition_locations.0.chord_group,
             Layer => &definition_locations.0.layer,
+            Template => &definition_locations.0.template,
             Include => {
                 return {
                     Some(GotoDefinitionLink {
@@ -89,6 +90,7 @@ pub fn references(
             VirtualKey => &reference_locations.0.virtual_key,
             ChordGroup => &reference_locations.0.chord_group,
             Layer => &reference_locations.0.layer,
+            Template => &reference_locations.0.template,
             Include => unreachable!("includes can't be backreferenced"),
         };
         let locations: Option<Vec<_>> = location_map.0.get(&location_info.ref_name).map(|spans| {

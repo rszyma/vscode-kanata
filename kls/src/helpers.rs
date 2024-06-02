@@ -91,6 +91,7 @@ pub enum ReferenceKind {
     VirtualKey,
     ChordGroup,
     Layer,
+    Template,
     Include,
 }
 
@@ -113,6 +114,7 @@ impl DefinitionLocations {
             zip(&self.0.virtual_key, repeat(ReferenceKind::VirtualKey)),
             zip(&self.0.chord_group, repeat(ReferenceKind::ChordGroup)),
             zip(&self.0.layer, repeat(ReferenceKind::Layer)),
+            zip(&self.0.template, repeat(ReferenceKind::Template)),
         ) {
             let range = lsp_range_from_span(span);
             if pos.line >= range.start.line
@@ -147,6 +149,7 @@ impl ReferenceLocations {
             zip(&self.0.virtual_key.0, repeat(ReferenceKind::VirtualKey)),
             zip(&self.0.chord_group.0, repeat(ReferenceKind::ChordGroup)),
             zip(&self.0.layer.0, repeat(ReferenceKind::Layer)),
+            zip(&self.0.template.0, repeat(ReferenceKind::Template)),
             zip(&self.0.include.0, repeat(ReferenceKind::Include)),
         ) {
             for span in spans {

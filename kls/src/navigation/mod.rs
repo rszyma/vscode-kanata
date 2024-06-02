@@ -19,6 +19,7 @@ pub fn definition_location(
     source_doc: &Url,
     definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
     reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
+    match_all_defs: bool,
 ) -> Option<GotoDefinitionLink> {
     let source_doc_reference_locations = reference_locations_by_doc.get(source_doc)?;
 
@@ -28,7 +29,16 @@ pub fn definition_location(
     };
     log!("{:?}", &location_info);
 
-    for (_, definition_locations) in definition_locations_by_doc.iter() {
+    let mut map: HashMap<Url, DefinitionLocations> = HashMap::new();
+    let defs_iter: std::collections::hash_map::Iter<Url, DefinitionLocations> = if match_all_defs {
+        definition_locations_by_doc.iter()
+    } else {
+        let item: DefinitionLocations =
+            definition_locations_by_doc.get(source_doc).unwrap().clone();
+        map.insert(source_doc.clone(), item);
+        map.iter()
+    };
+    for (_, definition_locations) in defs_iter {
         use ReferenceKind::*;
         let location_map = match location_info.ref_kind {
             Alias => &definition_locations.0.alias,
@@ -70,6 +80,7 @@ pub fn references(
     source_doc: &Url,
     definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
     reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
+    match_all_refs: bool, // Need to set `true` for workspace mode and `false` otherwise.
 ) -> Option<Vec<GotoDefinitionLink>> {
     let source_doc_definition_locations = definition_locations_by_doc.get(source_doc)?;
 
@@ -81,7 +92,15 @@ pub fn references(
 
     let mut reference_links: Vec<GotoDefinitionLink> = Vec::new();
 
-    for (_, reference_locations) in reference_locations_by_doc.iter() {
+    let mut map: HashMap<Url, ReferenceLocations> = HashMap::new();
+    let refs_iter: std::collections::hash_map::Iter<Url, ReferenceLocations> = if match_all_refs {
+        reference_locations_by_doc.iter()
+    } else {
+        let item: ReferenceLocations = reference_locations_by_doc.get(source_doc).unwrap().clone();
+        map.insert(source_doc.clone(), item);
+        map.iter()
+    };
+    for (_, reference_locations) in refs_iter {
         use ReferenceKind::*;
         let location_map = match location_info.ref_kind {
             Alias => &reference_locations.0.alias,

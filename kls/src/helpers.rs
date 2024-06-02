@@ -101,7 +101,7 @@ pub struct LocationInfo {
     pub source_range: Range,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
 
 impl DefinitionLocations {
@@ -132,7 +132,7 @@ impl DefinitionLocations {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
 
 impl ReferenceLocations {

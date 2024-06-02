@@ -224,8 +224,8 @@ impl Display for DefLocalKeysVariant {
 
 #[derive(Debug, Clone)]
 enum WorkspaceOptions {
-    /// `root` is `None` in Single mode when file is not opened in a workspace.
     Single {
+        /// `root` is `None` when the document is not opened in a workspace.
         root: Option<Url>,
     },
     Workspace {
@@ -518,12 +518,16 @@ impl KanataLanguageServer {
         log!("========= on_go_to_definition_impl ========");
         let (_, definition_locations_per_doc, reference_locations_per_doc) = self.parse();
         let source_doc_uri = &params.text_document_position_params.text_document.uri;
-
+        let match_all_defs = match self.workspace_options {
+            WorkspaceOptions::Single { .. } => false,
+            WorkspaceOptions::Workspace { .. } => true,
+        };
         let definition_link = match navigation::definition_location(
             &params.text_document_position_params.position,
             source_doc_uri,
             &definition_locations_per_doc,
             &reference_locations_per_doc,
+            match_all_defs,
         ) {
             Some(x) => x,
             None => {
@@ -537,7 +541,7 @@ impl KanataLanguageServer {
         };
         log!("matching definition found: {:#?}", definition_link);
         let target_uri: Url = match &self.workspace_options {
-            WorkspaceOptions::Single { root } => root.clone().unwrap_or(source_doc_uri.clone()),
+            WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
             WorkspaceOptions::Workspace { root, .. } => {
                 match path_to_url(Path::new(&definition_link.target_filename), root) {
                     Ok(x) => x,
@@ -564,20 +568,23 @@ impl KanataLanguageServer {
         definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
         reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
     ) -> Option<Vec<LocationLink>> {
+        let match_all_refs = match self.workspace_options {
+            WorkspaceOptions::Single { .. } => false,
+            WorkspaceOptions::Workspace { .. } => true,
+        };
         let references = navigation::references(
             position,
             source_doc_uri,
             definition_locations_by_doc,
             reference_locations_by_doc,
+            match_all_refs,
         )?;
         log!("matching reference(s) found: {:#?}", references);
         references
             .iter()
             .try_fold(vec![], |mut acc, reference_link| {
                 let target_uri: Url = match &self.workspace_options {
-                    WorkspaceOptions::Single { root } => {
-                        root.clone().unwrap_or(source_doc_uri.clone())
-                    }
+                    WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
                     WorkspaceOptions::Workspace { root, .. } => {
                         match path_to_url(Path::new(&reference_link.target_filename), root) {
                             Ok(x) => x,

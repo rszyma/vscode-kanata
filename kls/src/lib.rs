@@ -819,6 +819,7 @@ impl KanataLanguageServer {
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 
+        #[allow(clippy::type_complexity)]
         let (parse_errors, inactive_codes, identifiers, references): (
             Vec<CustomParseError>,
             Vec<InactiveCode>,
@@ -854,7 +855,7 @@ impl KanataLanguageServer {
                     inactive_codes,
                     definition_locations,
                     reference_locations,
-                } = self.parse_workspace(&main_config_file, root);
+                } = self.parse_workspace(main_config_file, root);
 
                 let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
                 let mut references: HashMap<Url, ReferenceLocations> = Default::default();

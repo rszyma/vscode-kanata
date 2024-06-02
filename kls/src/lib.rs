@@ -868,14 +868,12 @@ impl KanataLanguageServer {
                 url_map_definitions!(alias, root, definitions, definition_locations.0);
                 url_map_definitions!(variable, root, definitions, definition_locations.0);
                 url_map_definitions!(virtual_key, root, definitions, definition_locations.0);
-                url_map_definitions!(chord_group, root, definitions, definition_locations.0);
                 url_map_definitions!(layer, root, definitions, definition_locations.0);
                 url_map_definitions!(template, root, definitions, definition_locations.0);
 
                 url_map_references!(alias, root, references, reference_locations.0);
                 url_map_references!(variable, root, references, reference_locations.0);
                 url_map_references!(virtual_key, root, references, reference_locations.0);
-                url_map_references!(chord_group, root, references, reference_locations.0);
                 url_map_references!(layer, root, references, reference_locations.0);
                 url_map_references!(template, root, references, reference_locations.0);
                 url_map_references!(include, root, references, reference_locations.0);

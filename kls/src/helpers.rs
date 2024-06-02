@@ -89,7 +89,6 @@ pub enum ReferenceKind {
     Alias,
     Variable,
     VirtualKey,
-    ChordGroup,
     Layer,
     Template,
     Include,
@@ -112,7 +111,6 @@ impl DefinitionLocations {
             zip(&self.0.alias, repeat(ReferenceKind::Alias)),
             zip(&self.0.variable, repeat(ReferenceKind::Variable)),
             zip(&self.0.virtual_key, repeat(ReferenceKind::VirtualKey)),
-            zip(&self.0.chord_group, repeat(ReferenceKind::ChordGroup)),
             zip(&self.0.layer, repeat(ReferenceKind::Layer)),
             zip(&self.0.template, repeat(ReferenceKind::Template)),
         ) {
@@ -147,7 +145,6 @@ impl ReferenceLocations {
             zip(&self.0.alias.0, repeat(ReferenceKind::Alias)),
             zip(&self.0.variable.0, repeat(ReferenceKind::Variable)),
             zip(&self.0.virtual_key.0, repeat(ReferenceKind::VirtualKey)),
-            zip(&self.0.chord_group.0, repeat(ReferenceKind::ChordGroup)),
             zip(&self.0.layer.0, repeat(ReferenceKind::Layer)),
             zip(&self.0.template.0, repeat(ReferenceKind::Template)),
             zip(&self.0.include.0, repeat(ReferenceKind::Include)),

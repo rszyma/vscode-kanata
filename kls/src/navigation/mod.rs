@@ -34,7 +34,6 @@ pub fn definition_location(
             Alias => &definition_locations.0.alias,
             Variable => &definition_locations.0.variable,
             VirtualKey => &definition_locations.0.virtual_key,
-            ChordGroup => &definition_locations.0.chord_group,
             Layer => &definition_locations.0.layer,
             Template => &definition_locations.0.template,
             Include => {
@@ -88,7 +87,6 @@ pub fn references(
             Alias => &reference_locations.0.alias,
             Variable => &reference_locations.0.variable,
             VirtualKey => &reference_locations.0.virtual_key,
-            ChordGroup => &reference_locations.0.chord_group,
             Layer => &reference_locations.0.layer,
             Template => &reference_locations.0.template,
             Include => unreachable!("includes can't be backreferenced"),

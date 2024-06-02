@@ -257,3 +257,67 @@ pub fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {
     };
     Ok(file_url)
 }
+
+#[macro_export]
+macro_rules! url_map_definitions {
+    ($def_kind:ident, $root:expr, $definitions:expr, $definition_locations:expr) => {
+        for (k, v) in $definition_locations.$def_kind.iter() {
+            let url = match path_to_url(Path::new(v.file_name.as_ref()), $root) {
+                Ok(url) => url,
+                Err(e) => {
+                    log!("path_to_url failed: {}", e);
+                    continue;
+                }
+            };
+            match $definitions.get_mut(&url) {
+                Some(val) => {
+                    val.0.$def_kind.insert(k.to_owned(), v.to_owned());
+                }
+                None => {
+                    let mut def = kanata_parser::lsp_hints::DefinitionLocations::default();
+                    def.$def_kind.insert(k.to_owned(), v.to_owned());
+                    $definitions.insert(url, DefinitionLocations(def));
+                }
+            };
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! url_map_references {
+    ($ref_kind:ident, $root:expr, $references:expr, $reference_locations:expr) => {
+        for (k, spans) in $reference_locations.$ref_kind.0.iter() {
+            for span in spans.iter() {
+                let url = match path_to_url(Path::new(span.file_name.as_ref()), $root) {
+                    Ok(url) => url,
+                    Err(e) => {
+                        log!("path_to_url failed: {}", e);
+                        continue;
+                    }
+                };
+                match $references.get_mut(&url) {
+                    Some(refloc) => match refloc.0.$ref_kind.0.get_mut(k) {
+                        Some(vec) => {
+                            vec.push(span.to_owned());
+                        }
+                        None => {
+                            refloc
+                                .0
+                                .$ref_kind
+                                .0
+                                .insert(k.to_owned(), vec![span.to_owned()]);
+                        }
+                    },
+                    None => {
+                        let mut refloc = kanata_parser::lsp_hints::ReferenceLocations::default();
+                        refloc
+                            .$ref_kind
+                            .0
+                            .insert(k.to_owned(), vec![span.to_owned()]);
+                        $references.insert(url, ReferenceLocations(refloc));
+                    }
+                };
+            }
+        }
+    };
+}

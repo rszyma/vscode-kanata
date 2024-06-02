@@ -521,16 +521,16 @@ impl KanataLanguageServer {
 
         let definition_link = match navigation::goto_definition(
             &params.text_document_position_params.position,
-            definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
-            reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+            definition_locations_storage.get(source_doc_uri)?,
+            reference_locations_storage.get(source_doc_uri)?,
         ) {
             Some(x) => x,
             None => {
                 return Some(GotoDefinitionResponse::Link(self.on_references_impl(
                     &params.text_document_position_params.position,
                     source_doc_uri,
-                    definition_locations_storage.for_uri_for_multiple(source_doc_uri)?,
-                    reference_locations_storage.for_uri_for_multiple(source_doc_uri)?,
+                    definition_locations_storage.get(source_doc_uri)?,
+                    reference_locations_storage.get(source_doc_uri)?,
                 )?))
             }
         };
@@ -809,8 +809,8 @@ impl KanataLanguageServer {
         &self,
     ) -> (
         Diagnostics,
-        UnifiedOrMultiple<DefinitionLocations>,
-        UnifiedOrMultiple<ReferenceLocations>,
+        HashMap<Url, DefinitionLocations>,
+        HashMap<Url, ReferenceLocations>,
     ) {
         let docs = self
             .documents
@@ -822,14 +822,15 @@ impl KanataLanguageServer {
         let (parse_errors, inactive_codes, identifiers, references): (
             Vec<CustomParseError>,
             Vec<InactiveCode>,
-            UnifiedOrMultiple<DefinitionLocations>,
-            UnifiedOrMultiple<ReferenceLocations>,
+            HashMap<Url, DefinitionLocations>,
+            HashMap<Url, ReferenceLocations>,
         ) = match &self.workspace_options {
             WorkspaceOptions::Single { .. } => {
                 let mut errs = vec![];
                 let mut inactives = vec![];
                 let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
                 let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+
                 for doc in docs {
                     let KlsParserOutput {
                         errors,
@@ -842,12 +843,7 @@ impl KanataLanguageServer {
                     definitions.insert(doc.uri.clone(), definition_locations);
                     references.insert(doc.uri.clone(), reference_locations);
                 }
-                (
-                    errs,
-                    inactives,
-                    UnifiedOrMultiple::Multiple(definitions),
-                    UnifiedOrMultiple::Multiple(references),
-                )
+                (errs, inactives, definitions, references)
             }
             WorkspaceOptions::Workspace {
                 main_config_file,
@@ -858,13 +854,25 @@ impl KanataLanguageServer {
                     inactive_codes,
                     definition_locations,
                     reference_locations,
-                } = self.parse_workspace(main_config_file, root);
-                (
-                    errors,
-                    inactive_codes,
-                    UnifiedOrMultiple::Unified(definition_locations),
-                    UnifiedOrMultiple::Unified(reference_locations),
-                )
+                } = self.parse_workspace(&main_config_file, root);
+
+                let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
+                let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+
+                url_map_definitions!(alias, root, definitions, definition_locations.0);
+                url_map_definitions!(variable, root, definitions, definition_locations.0);
+                url_map_definitions!(virtual_key, root, definitions, definition_locations.0);
+                url_map_definitions!(chord_group, root, definitions, definition_locations.0);
+                url_map_definitions!(layer, root, definitions, definition_locations.0);
+
+                url_map_references!(alias, root, references, reference_locations.0);
+                url_map_references!(variable, root, references, reference_locations.0);
+                url_map_references!(virtual_key, root, references, reference_locations.0);
+                url_map_references!(chord_group, root, references, reference_locations.0);
+                url_map_references!(layer, root, references, reference_locations.0);
+                url_map_references!(include, root, references, reference_locations.0);
+
+                (errors, inactive_codes, definitions, references)
             }
         };
 
@@ -933,21 +941,5 @@ impl KanataLanguageServer {
             diagnostics.extend(new_inactive_codes_diags);
         }
         (diagnostics, identifiers, references)
-    }
-}
-
-enum UnifiedOrMultiple<T> {
-    // Store items per-file
-    Multiple(HashMap<Url, T>),
-    // Store items combined
-    Unified(T),
-}
-
-impl<T> UnifiedOrMultiple<T> {
-    fn for_uri_for_multiple(&self, uri: &Url) -> Option<&T> {
-        match self {
-            UnifiedOrMultiple::Multiple(hashmap) => hashmap.get(uri),
-            UnifiedOrMultiple::Unified(x) => Some(x),
-        }
     }
 }

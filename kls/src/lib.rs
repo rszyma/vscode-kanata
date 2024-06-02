@@ -534,7 +534,7 @@ impl KanataLanguageServer {
                 )?))
             }
         };
-        log!("definition found: {:#?}", definition_link);
+        log!("matching definition found: {:#?}", definition_link);
         let target_uri: Url = match &self.workspace_options {
             WorkspaceOptions::Single { root } => root.clone().unwrap_or(source_doc_uri.clone()),
             WorkspaceOptions::Workspace { root, .. } => {
@@ -565,7 +565,7 @@ impl KanataLanguageServer {
     ) -> Option<Vec<LocationLink>> {
         let references =
             navigation::references(position, identifier_locations, reference_locations)?;
-        log!("reference(s) found: {:#?}", references);
+        log!("matching reference(s) found: {:#?}", references);
         references
             .iter()
             .try_fold(vec![], |mut acc, reference_link| {

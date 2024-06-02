@@ -1,6 +1,9 @@
 use lsp_types::{Position, Range};
 
-use crate::helpers::{lsp_range_from_span, DefinitionLocations, ReferenceKind, ReferenceLocations};
+use crate::{
+    helpers::{lsp_range_from_span, DefinitionLocations, ReferenceKind, ReferenceLocations},
+    log,
+};
 
 #[derive(Debug)]
 pub struct GotoDefinitionLink {
@@ -9,7 +12,6 @@ pub struct GotoDefinitionLink {
     pub target_filename: String,
 }
 
-// Returns filename as string and lsp-type position.
 pub fn goto_definition(
     pos: &Position,
     identifier_locations: &DefinitionLocations,
@@ -19,6 +21,7 @@ pub fn goto_definition(
         Some(x) => x,
         None => return None,
     };
+    log!("{:?}", &location_info);
 
     use ReferenceKind::*;
     let location_map = match location_info.ref_kind {
@@ -48,7 +51,6 @@ pub fn goto_definition(
         })
 }
 
-// Returns filename as string and lsp-type position.
 pub fn references(
     pos: &Position,
     identifier_locations: &DefinitionLocations,
@@ -58,6 +60,7 @@ pub fn references(
         Some(x) => x,
         None => return None,
     };
+    log!("{:?}", &location_info);
 
     use ReferenceKind::*;
     let location_map = match location_info.ref_kind {

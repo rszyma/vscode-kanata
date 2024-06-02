@@ -94,6 +94,7 @@ pub enum ReferenceKind {
     Include,
 }
 
+#[derive(Debug)]
 pub struct LocationInfo {
     pub ref_kind: ReferenceKind,
     pub ref_name: String,
@@ -127,7 +128,7 @@ impl DefinitionLocations {
                 });
             }
         }
-        log!("search_references_at_position not found references");
+        log!("search_references_at_position: not found any references");
         None
     }
 }
@@ -165,7 +166,7 @@ impl ReferenceLocations {
                 }
             }
         }
-        log!("search_definitions_at_position not found definition");
+        log!("search_definitions_at_position: not found any definitions");
         None
     }
 }

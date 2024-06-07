@@ -15,7 +15,7 @@ install_release:
 
 # Creates a commit, that updates kanata to latest git and adds notice about it to CHANGELOG.md
 bump_kanata:
-    #!/bin/bash
+    #!/usr/bin/env bash
     set -euxo pipefail
     git submodule update --remote
     cd kanata

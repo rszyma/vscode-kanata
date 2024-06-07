@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 bench = false
 
 [dependencies]
-kanata-parser = { path = "../kanata/parser", features = ["cmd"]}
+kanata-parser = { path = "../kanata/parser", features = ["lsp", "cmd", "gui"]}
 
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.53"
@@ -31,6 +31,7 @@ serde_json = "^1.0.104"
 unicode-segmentation = "1.10.1"
 zduny-wasm-timer = "0.2.8"
 wee_alloc = "0.4.5"
+itertools = "0.12.1"
 
 [dev-dependencies]
 # wasm-bindgen-test = "0.3.39"

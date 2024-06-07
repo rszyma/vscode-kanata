@@ -5,21 +5,25 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 use crate::{
     formatter::defsrc_layout::LineEndingSequence,
-    helpers::{lsp_range_from_span, HashSet},
+    helpers::{lsp_range_from_span, path_to_url, HashSet},
 };
 use anyhow::{anyhow, bail};
 use formatter::Formatter;
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
+use kanata_parser::{
+    cfg::{sexpr::Span, FileContentProvider, ParseError},
+    lsp_hints::InactiveCode,
+};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, Request},
+    request::{Formatting, GotoDefinition, Request},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, InitializeParams,
-    PublishDiagnosticsParams, TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
+    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, GotoDefinitionParams,
+    GotoDefinitionResponse, InitializeParams, LocationLink, Position, PublishDiagnosticsParams,
+    TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -33,11 +37,12 @@ use wasm_bindgen::prelude::*;
 
 mod helpers;
 use helpers::{
-    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, Diagnostics, Documents,
-    KlsParserOutput,
+    empty_diagnostics_for_doc, parse_wrapper, CustomParseError, DefinitionLocations, Diagnostics,
+    Documents, KlsParserOutput, ReferenceLocations,
 };
 
 mod formatter;
+mod navigation;
 
 struct Kanata {
     def_local_keys_variant_to_apply: String,
@@ -153,7 +158,7 @@ impl Kanata {
             Err(err) => {
                 return KlsParserOutput {
                     errors: vec![err.clone()],
-                    inactive_codes: vec![],
+                    ..Default::default()
                 }
             }
         };
@@ -166,16 +171,6 @@ impl Kanata {
             &self.env_vars,
         )
     }
-}
-
-fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {
-    let file_url = if path.is_absolute() {
-        Url::from_str(format!("file://{}", path.to_string_lossy()).as_ref())
-            .map_err(|_| anyhow!("invalid path"))?
-    } else {
-        Url::join(root_folder, &path.to_string_lossy())?
-    };
-    Ok(file_url)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -229,8 +224,8 @@ impl Display for DefLocalKeysVariant {
 
 #[derive(Debug, Clone)]
 enum WorkspaceOptions {
-    /// `root` is `None` in Single mode when file is not opened in a workspace.
     Single {
+        /// `root` is `None` when the document is not opened in a workspace.
         root: Option<Url>,
     },
     Workspace {
@@ -349,7 +344,7 @@ impl KanataLanguageServer {
                     log!("reopened tracked doc");
                 }
 
-                let diagnostics = self.get_diagnostics();
+                let (diagnostics, _, _) = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
             // We don't care when a document is closed -- we care about all Kanata files in a
@@ -424,7 +419,7 @@ impl KanataLanguageServer {
                     log!("detected file deletion: {}", uri);
                     let removed_docs = self.remove_tracked_documents_in_dir(&uri);
                     if !removed_docs.is_empty() {
-                        let diagnostics = self.get_diagnostics();
+                        let (diagnostics, _, _) = self.parse();
                         self.send_diagnostics(&diagnostics);
                     }
                 }
@@ -432,7 +427,7 @@ impl KanataLanguageServer {
 
             DidSaveTextDocument::METHOD => {
                 let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
-                let diagnostics = self.get_diagnostics();
+                let (diagnostics, _, _) = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
 
@@ -504,6 +499,110 @@ impl KanataLanguageServer {
             range,
             new_text: tree.to_string(),
         }])
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDefinition)]
+    pub fn on_go_to_definition(&mut self, params: JsValue) -> JsValue {
+        type Params = <GotoDefinition as Request>::Params;
+        type Result = <GotoDefinition as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
+    }
+
+    /// Returns None on error.
+    fn on_go_to_definition_impl(
+        &mut self,
+        params: &GotoDefinitionParams,
+    ) -> Option<GotoDefinitionResponse> {
+        log!("========= on_go_to_definition_impl ========");
+        let (_, definition_locations_per_doc, reference_locations_per_doc) = self.parse();
+        let source_doc_uri = &params.text_document_position_params.text_document.uri;
+        let match_all_defs = match self.workspace_options {
+            WorkspaceOptions::Single { .. } => false,
+            WorkspaceOptions::Workspace { .. } => true,
+        };
+        let definition_link = match navigation::definition_location(
+            &params.text_document_position_params.position,
+            source_doc_uri,
+            &definition_locations_per_doc,
+            &reference_locations_per_doc,
+            match_all_defs,
+        ) {
+            Some(x) => x,
+            None => {
+                return Some(GotoDefinitionResponse::Link(self.on_references_impl(
+                    &params.text_document_position_params.position,
+                    source_doc_uri,
+                    &definition_locations_per_doc,
+                    &reference_locations_per_doc,
+                )?))
+            }
+        };
+        log!("matching definition found: {:#?}", definition_link);
+        let target_uri: Url = match &self.workspace_options {
+            WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
+            WorkspaceOptions::Workspace { root, .. } => {
+                match path_to_url(Path::new(&definition_link.target_filename), root) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        log!("goto definition failed: {}", err);
+                        return None;
+                    }
+                }
+            }
+        };
+        Some(GotoDefinitionResponse::Link(vec![LocationLink {
+            origin_selection_range: Some(definition_link.source_range),
+            target_uri,
+            target_range: definition_link.target_range,
+            target_selection_range: definition_link.target_range,
+        }]))
+    }
+
+    /// Returns None on error.
+    fn on_references_impl(
+        &mut self,
+        position: &Position,
+        source_doc_uri: &Url,
+        definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
+        reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
+    ) -> Option<Vec<LocationLink>> {
+        let match_all_refs = match self.workspace_options {
+            WorkspaceOptions::Single { .. } => false,
+            WorkspaceOptions::Workspace { .. } => true,
+        };
+        let references = navigation::references(
+            position,
+            source_doc_uri,
+            definition_locations_by_doc,
+            reference_locations_by_doc,
+            match_all_refs,
+        )?;
+        log!("matching reference(s) found: {:#?}", references);
+        references
+            .iter()
+            .try_fold(vec![], |mut acc, reference_link| {
+                let target_uri: Url = match &self.workspace_options {
+                    WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
+                    WorkspaceOptions::Workspace { root, .. } => {
+                        match path_to_url(Path::new(&reference_link.target_filename), root) {
+                            Ok(x) => x,
+                            Err(err) => {
+                                log!("reference failed: {}", err);
+                                return None;
+                            }
+                        }
+                    }
+                };
+                acc.push(LocationLink {
+                    origin_selection_range: Some(reference_link.source_range),
+                    target_uri,
+                    target_range: reference_link.target_range,
+                    target_selection_range: reference_link.target_range,
+                });
+                Some(acc)
+            })
     }
 }
 
@@ -652,7 +751,7 @@ impl KanataLanguageServer {
 
     fn diagnostics_from_inactive_code(
         &self,
-        inactive: &LspHintInactiveCode,
+        inactive: &InactiveCode,
     ) -> (Option<TextDocumentItem>, Vec<Diagnostic>) {
         let doc: Option<TextDocumentItem> =
             self.document_from_span(&inactive.span).unwrap_or_else(|e| {
@@ -718,9 +817,13 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    /// Gets up-to-date diagnostics from kanata-parser.
-    /// All previously set diagnostics will be cleared.
-    fn get_diagnostics(&self) -> Diagnostics {
+    fn parse(
+        &self,
+    ) -> (
+        Diagnostics,
+        HashMap<Url, DefinitionLocations>,
+        HashMap<Url, ReferenceLocations>,
+    ) {
         let docs = self
             .documents
             .values()
@@ -728,32 +831,63 @@ impl KanataLanguageServer {
             .collect::<Vec<_>>();
         let docs: Vec<_> = docs.iter().collect();
 
-        let (parse_errors, inactive_codes): (Vec<CustomParseError>, Vec<LspHintInactiveCode>) =
-            match &self.workspace_options {
-                WorkspaceOptions::Single { .. } => {
-                    let mut errs = vec![];
-                    let mut inactives = vec![];
-                    for doc in docs {
-                        let KlsParserOutput {
-                            errors,
-                            inactive_codes,
-                        } = self.parse_a_single_file_in_workspace(doc);
-                        errs.extend(errors);
-                        inactives.extend(inactive_codes);
-                    }
-                    (errs, inactives)
-                }
-                WorkspaceOptions::Workspace {
-                    main_config_file,
-                    root,
-                } => {
+        #[allow(clippy::type_complexity)]
+        let (parse_errors, inactive_codes, identifiers, references): (
+            Vec<CustomParseError>,
+            Vec<InactiveCode>,
+            HashMap<Url, DefinitionLocations>,
+            HashMap<Url, ReferenceLocations>,
+        ) = match &self.workspace_options {
+            WorkspaceOptions::Single { .. } => {
+                let mut errs = vec![];
+                let mut inactives = vec![];
+                let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
+                let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+
+                for doc in docs {
                     let KlsParserOutput {
                         errors,
                         inactive_codes,
-                    } = self.parse_workspace(main_config_file, root);
-                    (errors, inactive_codes)
+                        definition_locations,
+                        reference_locations,
+                    } = self.parse_a_single_file_in_workspace(doc);
+                    errs.extend(errors);
+                    inactives.extend(inactive_codes);
+                    definitions.insert(doc.uri.clone(), definition_locations);
+                    references.insert(doc.uri.clone(), reference_locations);
                 }
-            };
+                (errs, inactives, definitions, references)
+            }
+            WorkspaceOptions::Workspace {
+                main_config_file,
+                root,
+            } => {
+                let KlsParserOutput {
+                    errors,
+                    inactive_codes,
+                    definition_locations,
+                    reference_locations,
+                } = self.parse_workspace(main_config_file, root);
+
+                let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
+                let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+
+                url_map_definitions!(alias, root, definitions, definition_locations.0);
+                url_map_definitions!(variable, root, definitions, definition_locations.0);
+                url_map_definitions!(virtual_key, root, definitions, definition_locations.0);
+                url_map_definitions!(layer, root, definitions, definition_locations.0);
+                url_map_definitions!(template, root, definitions, definition_locations.0);
+
+                url_map_references!(alias, root, references, reference_locations.0);
+                url_map_references!(variable, root, references, reference_locations.0);
+                url_map_references!(virtual_key, root, references, reference_locations.0);
+                url_map_references!(layer, root, references, reference_locations.0);
+                url_map_references!(template, root, references, reference_locations.0);
+                url_map_references!(include, root, references, reference_locations.0);
+
+                (errors, inactive_codes, definitions, references)
+            }
+        };
 
         let new_error_diags = parse_errors
             .iter()
@@ -819,6 +953,6 @@ impl KanataLanguageServer {
         if self.dim_inactive_config_items {
             diagnostics.extend(new_inactive_codes_diags);
         }
-        diagnostics
+        (diagnostics, identifiers, references)
     }
 }

@@ -1,7 +1,16 @@
-use std::{collections::BTreeMap, path::Path, rc::Rc};
+use std::{
+    collections::BTreeMap,
+    iter::{repeat, zip},
+    path::Path,
+    rc::Rc,
+    str::FromStr,
+};
 
-use kanata_parser::cfg::{sexpr::Span, FileContentProvider, LspHintInactiveCode, ParseError};
-use lsp_types::{PublishDiagnosticsParams, TextDocumentItem, Url};
+use anyhow::anyhow;
+use itertools::chain;
+use kanata_parser::cfg::{sexpr::Span, FileContentProvider, ParseError};
+use kanata_parser::lsp_hints::InactiveCode;
+use lsp_types::{PublishDiagnosticsParams, Range, TextDocumentItem, Url};
 
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
 
@@ -75,6 +84,91 @@ impl CustomParseError {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum ReferenceKind {
+    Alias,
+    Variable,
+    VirtualKey,
+    Layer,
+    Template,
+    Include,
+}
+
+#[derive(Debug)]
+pub struct LocationInfo {
+    pub ref_kind: ReferenceKind,
+    pub ref_name: String,
+    pub source_range: Range,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
+
+impl DefinitionLocations {
+    pub fn search_references_at_position(&self, pos: &lsp_types::Position) -> Option<LocationInfo> {
+        log!("looking for references @ {:?}", pos);
+        for ((name, span), ref_kind) in chain!(
+            zip(&self.0.alias, repeat(ReferenceKind::Alias)),
+            zip(&self.0.variable, repeat(ReferenceKind::Variable)),
+            zip(&self.0.virtual_key, repeat(ReferenceKind::VirtualKey)),
+            zip(&self.0.layer, repeat(ReferenceKind::Layer)),
+            zip(&self.0.template, repeat(ReferenceKind::Template)),
+        ) {
+            let range = lsp_range_from_span(span);
+            if pos.line >= range.start.line
+                && pos.line <= range.end.line
+                && pos.character >= range.start.character
+                && pos.character <= range.end.character
+            {
+                return Some(LocationInfo {
+                    ref_kind,
+                    ref_name: name.to_owned(),
+                    source_range: range,
+                });
+            }
+        }
+        log!("search_references_at_position: not found any references");
+        None
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
+
+impl ReferenceLocations {
+    pub fn search_definitions_at_position(
+        &self,
+        pos: &lsp_types::Position,
+    ) -> Option<LocationInfo> {
+        log!("looking for definitions @ {:?}", pos);
+        for ((name, spans), ref_kind) in chain!(
+            zip(&self.0.alias.0, repeat(ReferenceKind::Alias)),
+            zip(&self.0.variable.0, repeat(ReferenceKind::Variable)),
+            zip(&self.0.virtual_key.0, repeat(ReferenceKind::VirtualKey)),
+            zip(&self.0.layer.0, repeat(ReferenceKind::Layer)),
+            zip(&self.0.template.0, repeat(ReferenceKind::Template)),
+            zip(&self.0.include.0, repeat(ReferenceKind::Include)),
+        ) {
+            for span in spans {
+                let range = lsp_range_from_span(span);
+                if pos.line >= range.start.line
+                    && pos.line <= range.end.line
+                    && pos.character >= range.start.character
+                    && pos.character <= range.end.character
+                {
+                    return Some(LocationInfo {
+                        ref_kind,
+                        ref_name: name.to_owned(),
+                        source_range: range,
+                    });
+                }
+            }
+        }
+        log!("search_definitions_at_position: not found any definitions");
+        None
+    }
+}
+
 pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
     lsp_types::Range {
         start: lsp_types::Position::new(
@@ -103,7 +197,9 @@ pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
 #[derive(Default)]
 pub struct KlsParserOutput {
     pub errors: Vec<CustomParseError>,
-    pub inactive_codes: Vec<LspHintInactiveCode>,
+    pub inactive_codes: Vec<InactiveCode>,
+    pub definition_locations: DefinitionLocations,
+    pub reference_locations: ReferenceLocations,
 }
 
 pub fn parse_wrapper(
@@ -130,7 +226,11 @@ pub fn parse_wrapper(
         );
         result
             .inactive_codes
-            .extend(parsed_state.lsp_hint_inactive_code.clone());
+            .extend(parsed_state.lsp_hints.borrow().inactive_code.clone());
+        result.definition_locations =
+            DefinitionLocations(parsed_state.lsp_hints.borrow().definition_locations.clone());
+        result.reference_locations =
+            ReferenceLocations(parsed_state.lsp_hints.borrow().reference_locations.clone());
     })
     .map_err(|e: ParseError| {
         let e = CustomParseError::from_parse_error(
@@ -145,4 +245,78 @@ pub fn parse_wrapper(
         );
     });
     result
+}
+
+pub fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {
+    let file_url = if path.is_absolute() {
+        Url::from_str(format!("file://{}", path.to_string_lossy()).as_ref())
+            .map_err(|_| anyhow!("invalid path"))?
+    } else {
+        Url::join(root_folder, &path.to_string_lossy())?
+    };
+    Ok(file_url)
+}
+
+#[macro_export]
+macro_rules! url_map_definitions {
+    ($def_kind:ident, $root:expr, $definitions:expr, $definition_locations:expr) => {
+        for (k, v) in $definition_locations.$def_kind.iter() {
+            let url = match path_to_url(Path::new(v.file_name.as_ref()), $root) {
+                Ok(url) => url,
+                Err(e) => {
+                    log!("path_to_url failed: {}", e);
+                    continue;
+                }
+            };
+            match $definitions.get_mut(&url) {
+                Some(val) => {
+                    val.0.$def_kind.insert(k.to_owned(), v.to_owned());
+                }
+                None => {
+                    let mut def = kanata_parser::lsp_hints::DefinitionLocations::default();
+                    def.$def_kind.insert(k.to_owned(), v.to_owned());
+                    $definitions.insert(url, DefinitionLocations(def));
+                }
+            };
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! url_map_references {
+    ($ref_kind:ident, $root:expr, $references:expr, $reference_locations:expr) => {
+        for (k, spans) in $reference_locations.$ref_kind.0.iter() {
+            for span in spans.iter() {
+                let url = match path_to_url(Path::new(span.file_name.as_ref()), $root) {
+                    Ok(url) => url,
+                    Err(e) => {
+                        log!("path_to_url failed: {}", e);
+                        continue;
+                    }
+                };
+                match $references.get_mut(&url) {
+                    Some(refloc) => match refloc.0.$ref_kind.0.get_mut(k) {
+                        Some(vec) => {
+                            vec.push(span.to_owned());
+                        }
+                        None => {
+                            refloc
+                                .0
+                                .$ref_kind
+                                .0
+                                .insert(k.to_owned(), vec![span.to_owned()]);
+                        }
+                    },
+                    None => {
+                        let mut refloc = kanata_parser::lsp_hints::ReferenceLocations::default();
+                        refloc
+                            .$ref_kind
+                            .0
+                            .insert(k.to_owned(), vec![span.to_owned()]);
+                        $references.insert(url, ReferenceLocations(refloc));
+                    }
+                };
+            }
+        }
+    };
 }

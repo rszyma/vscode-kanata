@@ -17,7 +17,7 @@ install_release:
 bump_kanata:
     #!/usr/bin/env bash
     set -euxo pipefail
-    git submodule update --remote
+    git submodule update --remote --force
     cd kanata
     HASH=$(git rev-parse --short HEAD)
     cd ..

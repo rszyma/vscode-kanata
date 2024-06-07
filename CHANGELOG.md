@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* Added go-to-definition and find-references features ([#32])[https://github.com/rszyma/vscode-kanata/pull/32]
 * Updated kanata to [306e172](https://github.com/jtroo/kanata/tree/306e172)
 
 ### 0.11.21

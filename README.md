@@ -47,6 +47,17 @@ majority of users prefer to align their `deflayer`s according to spacial layout 
 If you have "Auto format on save enabled" and don't want this feature, you can disable
 it in settings (search for "kanata.format").
 
+### Goto definition
+
+- CTRL+Click on an identifier to go to definition
+- CTRL+Click on a definition to reveal references.
+
+Implemented for aliases, variables, layers, virtualkeys, templates and includes.
+Supported in both single-mode and workspace (includes-enabled)
+mode.
+
+<!-- todo: gif here -->
+
 ## Contributing
 
 If you have an idea what could be improved, feel free to open an issue or a PR.

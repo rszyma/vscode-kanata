@@ -41,6 +41,7 @@
             git
             yarn
             wasm-pack
+            vsce
           ];
         };
       }

@@ -2,49 +2,31 @@ import {
   createConnection,
   ProposedFeatures,
   PublishDiagnosticsParams,
-  TextDocumentSyncKind,
   InitializeParams,
-  PositionEncodingKind,
 } from "vscode-languageserver/node";
 import { KanataLanguageServer } from "../../out/kls";
 
 // Create LSP connection
 const connection = createConnection(ProposedFeatures.all);
 
-const sendDiagnosticsCallback = (params: PublishDiagnosticsParams) =>
-  connection.sendDiagnostics(params);
-
 connection.onInitialize((params: InitializeParams) => {
-  const kls = new KanataLanguageServer(params, sendDiagnosticsCallback);
-
+  const kls = new KanataLanguageServer(
+    params,
+    (params: PublishDiagnosticsParams) => connection.sendDiagnostics(params),
+  );
   connection.onNotification((...args) => kls.onNotification(...args));
   connection.onDocumentFormatting((...args) =>
-    kls.onDocumentFormatting(...args),
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    kls.onDocumentFormatting(args[0]),
   );
-  connection.onDefinition((...args) => kls.onDefinition(...args));
-
-  return {
-    capabilities: {
-      textDocumentSync: {
-        openClose: true,
-        save: { includeText: false },
-        change: TextDocumentSyncKind.Full,
-      },
-      // UTF-8 is not supported in vscode-languageserver/node. See:
-      // https://github.com/microsoft/vscode-languageserver-node/issues/1224
-      positionEncoding: PositionEncodingKind.UTF16,
-      documentFormattingProvider: true,
-      workspace: {
-        workspaceFolders: { supported: false },
-        fileOperations: {
-          didDelete: {
-            filters: [{ pattern: { /* matches: 'folder', */ glob: "**" } }],
-          },
-        },
-      },
-      definitionProvider: true,
-    },
-  };
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  connection.onDefinition((...args) => kls.onDefinition(args[0]));
+  connection.languages.semanticTokens.on((...args) =>
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+    kls.onSemanticTokens(args[0]),
+  );
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+  return kls.initialize(params);
 });
 
 connection.listen();

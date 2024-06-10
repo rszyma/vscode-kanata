@@ -18,12 +18,15 @@ use lsp_types::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, GotoDefinition, Request},
+    request::{Formatting, GotoDefinition, Initialize, Request, SemanticTokensFullRequest},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, GotoDefinitionParams,
-    GotoDefinitionResponse, InitializeParams, LocationLink, Position, PublishDiagnosticsParams,
-    TextDocumentItem, TextEdit, Url, VersionedTextDocumentIdentifier,
+    DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, FileOperationFilter,
+    FileOperationPattern, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
+    InitializeResult, LocationLink, Position, PositionEncodingKind, PublishDiagnosticsParams,
+    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
+    TextDocumentItem, TextDocumentSyncKind, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -322,6 +325,95 @@ impl KanataLanguageServer {
         //         self_._reload_and_send_diagnostics_for_all_documents();
         //     }));
         // self_
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = initialize)]
+    pub fn initialize(&mut self, params: JsValue) -> JsValue {
+        type Params = <Initialize as Request>::Params;
+        type Result = <Initialize as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_value::<Result>(&self.initialize_impl(&params)).expect("no conversion error")
+    }
+
+    fn initialize_impl(&mut self, _params: &InitializeParams) -> InitializeResult {
+        let sem_tokens_legend = SemanticTokensLegend {
+            token_types: vec![
+                SemanticTokenType::NAMESPACE,
+                SemanticTokenType::TYPE,
+                SemanticTokenType::CLASS,
+                SemanticTokenType::ENUM,
+                SemanticTokenType::INTERFACE,
+                SemanticTokenType::STRUCT,
+                SemanticTokenType::TYPE_PARAMETER,
+                SemanticTokenType::PARAMETER,
+                SemanticTokenType::VARIABLE,
+                SemanticTokenType::PROPERTY,
+                SemanticTokenType::ENUM_MEMBER,
+                SemanticTokenType::EVENT,
+                SemanticTokenType::FUNCTION,
+                SemanticTokenType::METHOD,
+                SemanticTokenType::MACRO,
+                SemanticTokenType::KEYWORD,
+                SemanticTokenType::MODIFIER,
+                SemanticTokenType::COMMENT,
+                SemanticTokenType::STRING,
+                SemanticTokenType::NUMBER,
+                SemanticTokenType::REGEXP,
+                SemanticTokenType::OPERATOR,
+            ],
+            token_modifiers: vec![
+                SemanticTokenModifier::DECLARATION,
+                SemanticTokenModifier::DEFINITION,
+                SemanticTokenModifier::READONLY,
+                SemanticTokenModifier::STATIC,
+                SemanticTokenModifier::DEPRECATED,
+                SemanticTokenModifier::ABSTRACT,
+                SemanticTokenModifier::ASYNC,
+                SemanticTokenModifier::MODIFICATION,
+                SemanticTokenModifier::DOCUMENTATION,
+                SemanticTokenModifier::DEFAULT_LIBRARY,
+            ],
+        };
+
+        InitializeResult {
+            capabilities: lsp_types::ServerCapabilities {
+                // UTF-8 is not supported in vscode-languageserver/node. See:
+                // https://github.com/microsoft/vscode-languageserver-node/issues/1224
+                position_encoding: Some(PositionEncodingKind::UTF16),
+                // textDocumentSync: {
+                //   openClose: true,
+                //   save: { includeText: false },
+                //   change: TextDocumentSyncKind.Full,
+                // },
+                text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
+                definition_provider: Some(lsp_types::OneOf::Left(true)),
+                document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
+                workspace: Some(lsp_types::WorkspaceServerCapabilities {
+                    workspace_folders: Some(lsp_types::WorkspaceFoldersServerCapabilities {
+                        supported: Some(false),
+                        change_notifications: None,
+                    }),
+                    file_operations: Some(lsp_types::WorkspaceFileOperationsServerCapabilities {
+                        did_delete: Some(lsp_types::FileOperationRegistrationOptions {
+                            filters: vec![FileOperationFilter {
+                                scheme: None,
+                                pattern: FileOperationPattern {
+                                    glob: "**".to_string(),
+                                    matches: None,
+                                    options: None,
+                                },
+                            }],
+                        }),
+                        ..Default::default()
+                    }),
+                }),
+                ..Default::default()
+            },
+            server_info: None,
+        }
     }
 
     /// Catch-all handler for notifications sent by the LSP client.

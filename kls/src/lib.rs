@@ -192,6 +192,8 @@ struct Config {
     env_variables: HashMap<String, String>,
     #[serde(rename = "dimInactiveConfigItems")]
     dim_inactive_config_items: bool,
+    #[serde(rename = "enableSemanticHighlight")]
+    enable_semantic_highlight: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -267,7 +269,7 @@ pub struct KanataLanguageServer {
     workspace_options: WorkspaceOptions,
     send_diagnostics_callback: js_sys::Function,
     formatter: formatter::Formatter,
-    dim_inactive_config_items: bool,
+    config: Config,
 }
 
 /// Public API exposed via WASM.
@@ -307,7 +309,7 @@ impl KanataLanguageServer {
         };
 
         let workspace_options = WorkspaceOptions::from_config(&config, root_uri);
-        let env_vars: Vec<_> = config.env_variables.into_iter().collect();
+        let env_vars: Vec<_> = config.env_variables.clone().into_iter().collect();
 
         log!("env variables: {:?}", &env_vars);
 
@@ -320,7 +322,7 @@ impl KanataLanguageServer {
             },
             workspace_options,
             send_diagnostics_callback: send_diagnostics_callback.clone(),
-            dim_inactive_config_items: config.dim_inactive_config_items,
+            config,
         }
 
         // self_.reload_diagnostics_debouncer =
@@ -692,6 +694,9 @@ impl KanataLanguageServer {
         &mut self,
         params: &SemanticTokensParams,
     ) -> Option<SemanticTokensResult> {
+        if !self.config.enable_semantic_highlight {
+            return None;
+        }
         // FIXME: Block until all files in workspace are loaded.
         // otherwise, as in right now, semantic tokens are loaded properly
         // on extension initialization, because of a race condition.
@@ -1119,7 +1124,7 @@ impl KanataLanguageServer {
 
         let mut diagnostics = self.empty_diagnostics_for_all_documents();
         diagnostics.extend(new_error_diags);
-        if self.dim_inactive_config_items {
+        if self.config.dim_inactive_config_items {
             diagnostics.extend(new_inactive_codes_diags);
         }
         (diagnostics, identifiers, references)

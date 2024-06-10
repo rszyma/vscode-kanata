@@ -28,9 +28,11 @@ use lsp_types::{
     SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
     TextDocumentItem, TextDocumentSyncKind, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
+use semantic_tokens::{SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt::Display,
     path::{self, Path, PathBuf},
@@ -46,6 +48,7 @@ use helpers::{
 
 mod formatter;
 mod navigation;
+mod semantic_tokens;
 
 struct Kanata {
     def_local_keys_variant_to_apply: String,
@@ -327,6 +330,9 @@ impl KanataLanguageServer {
         // self_
     }
 
+    /// We don't actually do full initialization here, only finish it;
+    /// Here we're just assembling [InitializeResult] and returning it.
+    /// The actual initialization is done in the constructor.
     #[allow(unused_variables)]
     #[wasm_bindgen(js_class = KanataLanguageServer, js_name = initialize)]
     pub fn initialize(&mut self, params: JsValue) -> JsValue {
@@ -337,45 +343,6 @@ impl KanataLanguageServer {
     }
 
     fn initialize_impl(&mut self, _params: &InitializeParams) -> InitializeResult {
-        let sem_tokens_legend = SemanticTokensLegend {
-            token_types: vec![
-                SemanticTokenType::NAMESPACE,
-                SemanticTokenType::TYPE,
-                SemanticTokenType::CLASS,
-                SemanticTokenType::ENUM,
-                SemanticTokenType::INTERFACE,
-                SemanticTokenType::STRUCT,
-                SemanticTokenType::TYPE_PARAMETER,
-                SemanticTokenType::PARAMETER,
-                SemanticTokenType::VARIABLE,
-                SemanticTokenType::PROPERTY,
-                SemanticTokenType::ENUM_MEMBER,
-                SemanticTokenType::EVENT,
-                SemanticTokenType::FUNCTION,
-                SemanticTokenType::METHOD,
-                SemanticTokenType::MACRO,
-                SemanticTokenType::KEYWORD,
-                SemanticTokenType::MODIFIER,
-                SemanticTokenType::COMMENT,
-                SemanticTokenType::STRING,
-                SemanticTokenType::NUMBER,
-                SemanticTokenType::REGEXP,
-                SemanticTokenType::OPERATOR,
-            ],
-            token_modifiers: vec![
-                SemanticTokenModifier::DECLARATION,
-                SemanticTokenModifier::DEFINITION,
-                SemanticTokenModifier::READONLY,
-                SemanticTokenModifier::STATIC,
-                SemanticTokenModifier::DEPRECATED,
-                SemanticTokenModifier::ABSTRACT,
-                SemanticTokenModifier::ASYNC,
-                SemanticTokenModifier::MODIFICATION,
-                SemanticTokenModifier::DOCUMENTATION,
-                SemanticTokenModifier::DEFAULT_LIBRARY,
-            ],
-        };
-
         InitializeResult {
             capabilities: lsp_types::ServerCapabilities {
                 // UTF-8 is not supported in vscode-languageserver/node. See:
@@ -410,6 +377,21 @@ impl KanataLanguageServer {
                         ..Default::default()
                     }),
                 }),
+                semantic_tokens_provider: Some(
+                    lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        lsp_types::SemanticTokensOptions {
+                            work_done_progress_options: lsp_types::WorkDoneProgressOptions {
+                                work_done_progress: Some(false),
+                            },
+                            legend: SemanticTokensLegend {
+                                token_types: SEMANTIC_TOKEN_TYPES.into(),
+                                token_modifiers: SEMANTIC_TOKEN_MODIFIERS.into(),
+                            },
+                            range: Some(false),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                        },
+                    ),
+                ),
                 ..Default::default()
             },
             server_info: None,
@@ -695,6 +677,101 @@ impl KanataLanguageServer {
                 });
                 Some(acc)
             })
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onSemanticTokens)]
+    pub fn on_semantic_tokens(&mut self, params: JsValue) -> JsValue {
+        type Params = <SemanticTokensFullRequest as Request>::Params;
+        type Result = <SemanticTokensFullRequest as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_value::<Result>(&self.on_semantic_tokens_impl(&params)).expect("no conversion error")
+    }
+
+    fn on_semantic_tokens_impl(
+        &mut self,
+        params: &SemanticTokensParams,
+    ) -> Option<SemanticTokensResult> {
+        // FIXME: Block until all files in workspace are loaded.
+        // otherwise, as in right now, semantic tokens are loaded properly
+        // on extension initialization, because of a race condition.
+
+        log!("server received SemanticTokensFullRequest");
+
+        let source_doc_url = &params.text_document.uri;
+        let (_, definition_locations_per_doc, reference_locations_per_doc) = self.parse();
+
+        let defs = match definition_locations_per_doc.get(source_doc_url) {
+            Some(x) => &x.0,
+            None => {
+                log!("semantic_tokens: BUG? current document not in parse() results");
+                return None;
+            }
+        };
+        let refs = match reference_locations_per_doc.get(source_doc_url) {
+            Some(x) => &x.0,
+            None => {
+                log!("semantic_tokens: BUG? current document not in parse() results");
+                return None;
+            }
+        };
+
+        let mut unsorted_tokens: Vec<SemanticTokenWithAbsoluteRange> = vec![];
+
+        let def_mod = &[SemanticTokenModifier::DEFINITION];
+
+        push_defs!(unsorted_tokens, defs.alias, VARIABLE, def_mod);
+        push_refs!(unsorted_tokens, refs.alias, VARIABLE, &[]);
+
+        push_defs!(unsorted_tokens, defs.variable, VARIABLE, def_mod);
+        push_refs!(unsorted_tokens, refs.variable, VARIABLE, &[]);
+
+        push_defs!(unsorted_tokens, defs.virtual_key, PROPERTY, def_mod);
+        push_refs!(unsorted_tokens, refs.virtual_key, PROPERTY, &[]);
+
+        push_defs!(unsorted_tokens, defs.layer, CLASS, def_mod);
+        push_refs!(unsorted_tokens, refs.layer, CLASS, &[]);
+
+        push_defs!(unsorted_tokens, defs.template, KEYWORD, def_mod);
+        push_refs!(unsorted_tokens, refs.template, KEYWORD, &[]);
+
+        push_refs!(unsorted_tokens, refs.include, PROPERTY, &[]);
+
+        log!("semantic_tokens: {} tokens total", unsorted_tokens.len());
+
+        unsorted_tokens.sort_by(|t1, t2| {
+            if t1.span.start() > t2.span.start() {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        });
+        let sorted_tokens = unsorted_tokens;
+
+        let mut result: Vec<SemanticToken> = Vec::with_capacity(sorted_tokens.len());
+
+        let mut prev_line = 0;
+        let mut prev_char = 0;
+        for tok in sorted_tokens.into_iter() {
+            let lsp_range = lsp_range_from_span(&tok.span);
+            if prev_line != lsp_range.start.line {
+                prev_char = 0;
+            }
+            result.push(SemanticToken {
+                delta_line: lsp_range.start.line - prev_line,
+                delta_start: lsp_range.start.character - prev_char,
+                length: (tok.span.end.absolute - tok.span.start.absolute) as u32,
+                token_type: tok.token_type,
+                token_modifiers_bitset: tok.token_modifiers_bitset,
+            });
+            prev_line = lsp_range.start.line;
+            prev_char = lsp_range.start.character;
+        }
+
+        Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: result,
+        }))
     }
 }
 

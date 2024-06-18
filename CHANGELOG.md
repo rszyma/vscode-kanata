@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [edbe161](https://github.com/jtroo/kanata/tree/edbe161)
 
 ### 0.12.1
 

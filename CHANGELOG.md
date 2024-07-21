@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [a515be5](https://github.com/jtroo/kanata/tree/a515be5)
 
 ### 0.12.5
 

@@ -173,6 +173,9 @@ class Extension implements Disposable {
         dimInactiveConfigItems: workspace
           .getConfiguration()
           .get<boolean>("vscode-kanata.dimInactiveConfigItems", true),
+        enableSemanticHighlight: workspace
+          .getConfiguration()
+          .get<boolean>("vscode-kanata.enableSemanticHighlight", true),
       },
     };
 

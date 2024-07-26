@@ -124,6 +124,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Gray-out configuration items that are not applicable with the current settings (`deflocalkeys-*`, `defaliasenvcond`, `platform`)"
+        },
+        "vscode-kanata.enableSemanticHighlight": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable semantic highlight (experimental)"
         }
       }
     }

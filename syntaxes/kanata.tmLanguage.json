@@ -147,48 +147,41 @@
             }
         },
         {
-            "begin": "\"",
-            "beginCaptures": {
-                "0": {
-                    "name": "punctuation.definition.string.begin"
-                }
-            },
-            "end": "\"",
-            "endCaptures": {
-                "0": {
-                    "name": "punctuation.definition.string.end"
-                }
-            },
-            "name": "string.quoted.double",
-            "patterns": [
-                {
-                    "match": "(\\[abtnre0\"|\\\\])",
-                    "name": "constant.character.escape.kanata"
-                },
-                {
-                    "match": "(\\[^abtnre0\"|\\\\])",
-                    "name": "invalid.illegal.escape.kanata"
-                }
-            ]
+            "include": "#strings"
         }
     ],
     "repository": {
-        "keywords": {
-            "patterns": [
-                {
-                    "name": "keyword.control.kanata",
-                    "match": "\\b(-{3,})\\b"
-                }
-            ]
-        },
         "strings": {
-            "name": "string.quoted.double.kanata",
-            "begin": "\"",
-            "end": "\"",
             "patterns": [
                 {
-                    "name": "constant.character.escape.kanata",
-                    "match": "\\\\."
+                    "name": "string.quoted.double.kanata",
+                    "begin": "\"",
+                    "end": "\""
+                },
+                {
+                    "comment": "rust-style raw strings",
+                    "name": "string.quoted.double.kanata",
+                    "begin": "(r)(#)(\")",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "string.quoted.byte.raw.kanata"
+                        },
+                        "2": {
+                            "name": "punctuation.definition.string.raw.kanata"
+                        },
+                        "3": {
+                            "name": "punctuation.definition.string.kanata"
+                        }
+                    },
+                    "end": "(\")(\\2)",
+                    "endCaptures": {
+                        "1": {
+                            "name": "punctuation.definition.string.kanata"
+                        },
+                        "2": {
+                            "name": "punctuation.definition.string.raw.kanata"
+                        }
+                    }
                 }
             ]
         }

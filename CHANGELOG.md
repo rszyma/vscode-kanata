@@ -2,7 +2,8 @@
 
 ### Unreleased
 
-* no changes yet
+* Fix formatter crash on deflayer block with <= 2 items
+* Fix rust-style strings syntax highlighting ([#37](https://github.com/rszyma/vscode-kanata/issues/37))
 
 ### 0.12.8
 

@@ -42,8 +42,13 @@ impl ExtParseTree {
             }
         }
 
-        // Apply the `defsrc` layout to each `deflayer` block.
+        // Apply the `defsrc` layout to each valid `deflayer` block.
         for deflayer in &mut deflayers.iter_mut() {
+            if deflayer.len() <= 2 {
+                // At least a "deflayer" token and layer name is needed for valid deflayer block.
+                continue;
+            }
+
             if deflayer.len() - 2 != defsrc_layout.len() {
                 let layer_name = deflayer
                     .get(1)

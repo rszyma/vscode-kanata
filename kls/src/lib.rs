@@ -18,15 +18,14 @@ use lsp_types::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, GotoDefinition, Initialize, Request, SemanticTokensFullRequest},
+    request::{Formatting, GotoDefinition, Initialize, Request},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, FileOperationFilter,
     FileOperationPattern, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
     InitializeResult, LocationLink, Position, PositionEncodingKind, PublishDiagnosticsParams,
-    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
-    TextDocumentItem, TextDocumentSyncKind, TextEdit, Url, VersionedTextDocumentIdentifier,
+    SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend, TextDocumentItem,
+    TextDocumentSyncKind, TextEdit, Url, VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -337,7 +336,7 @@ impl KanataLanguageServer {
     }
 
     fn initialize_impl(&mut self, _params: &InitializeParams) -> InitializeResult {
-        let sem_tokens_legend = SemanticTokensLegend {
+        let _sem_tokens_legend = SemanticTokensLegend {
             token_types: vec![
                 SemanticTokenType::NAMESPACE,
                 SemanticTokenType::TYPE,

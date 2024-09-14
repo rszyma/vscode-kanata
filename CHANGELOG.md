@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [bdd65db](https://github.com/jtroo/kanata/tree/bdd65db)
 
 ### 0.13.2
 

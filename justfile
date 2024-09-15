@@ -33,11 +33,15 @@ bump_kanata:
 
 release VERSION:
     just _ensure_no_staged_changes
+    vsce verify-pat rszyma
+    ovsx verify-pat rszyma
     git checkout main
     git pull
+    make CARGO_FLAGS=--release package
     sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{VERSION}}\"/' package.json
     sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{VERSION}}/' CHANGELOG.md
-    vsce publish {{VERSION}}
+    vsce publish --yarn
+    ovsx publish --yarn
     git add CHANGELOG.md package.json
     git commit -m "Release v{{VERSION}}"
     git push

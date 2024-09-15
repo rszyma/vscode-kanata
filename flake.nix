@@ -42,6 +42,7 @@
             yarn
             wasm-pack
             vsce
+            (pkgs.writeShellScriptBin "ovsx" "${pkgs.bun}/bin/bunx ovsx $@")
           ];
         };
       }

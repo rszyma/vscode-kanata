@@ -78,16 +78,11 @@ jobs:
         echo "value=$(curl https://gist.githubusercontent.com/rszyma/c539a0dbe37d7de9f0c04c628b7a341a/raw/684177cd54d51c3bd8786e0d2b380e67f495fc1f/increment_version.sh -sSf | bash -s -- -p ${{ steps.version.outputs.value }})" >> $GITHUB_OUTPUT
 
     - name: Setup - vsce
-      run: yarn global add vsce
-
-    - name: Verify that VSCE_PAT is correct
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
-      run: vsce verify-pat rszyma
+      run: yarn global add vsce ovsx
 
     - name: Build and publish
       env:
         VSCE_PAT: ${{ secrets.VSCE_ACCESS_TOKEN }}
+        OVSX_PAT: ${{ secrets.OPENVSX_ACCESS_TOKEN }}
       run: |
-        make CARGO_FLAGS=--release package
         just release ${{ steps.new_version.outputs.value }}

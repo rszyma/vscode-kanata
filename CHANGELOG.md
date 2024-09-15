@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Added vscode-kanata to open-vsx registry - https://open-vsx.org/extension/rszyma/vscode-kanata
 
 ### 0.13.3
 

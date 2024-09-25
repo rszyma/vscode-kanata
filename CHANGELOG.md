@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [fccc61d](https://github.com/jtroo/kanata/tree/fccc61d)
 
 ### 0.13.7
 

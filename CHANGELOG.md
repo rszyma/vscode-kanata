@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* Updated kanata to [900376b](https://github.com/jtroo/kanata/tree/900376b)
 * Updated syntax highlighting spec to ([81c8a32](https://github.com/jtroo/kanata/tree/81c8a32))
 
 ### 0.13.18

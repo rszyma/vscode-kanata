@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [ab4c738](https://github.com/jtroo/kanata/tree/ab4c738)
 
 ### 0.13.20
 

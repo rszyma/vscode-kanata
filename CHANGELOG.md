@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.14.0
+
 * New feature: when hovering over an item in `deflayer`, show corresponding key from `defsrc` ([#46](https://github.com/rszyma/vscode-kanata/issues/46))
 * Fixed: include dash "-" in word pattern in language-configuration.json ([#47](https://github.com/rszyma/vscode-kanata/issues/47))
 

@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Fixed: include dash "-" in word pattern in language-configuration.json
 
 ### 0.13.22
 

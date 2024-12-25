@@ -41,7 +41,7 @@
             yarn
             wasm-pack
             vsce
-            (pkgs.writeShellScriptBin "ovsx" "${pkgs.bun}/bin/bunx ovsx $@")
+            (pkgs.writeShellScriptBin "ovsx" "${pkgs.nodejs_23}/bin/npx ovsx $@")
           ];
         };
       }

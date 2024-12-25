@@ -5,6 +5,8 @@ use crate::log;
 use anyhow::anyhow;
 use unicode_segmentation::*;
 
+pub mod get_keys;
+pub use get_keys::*;
 pub mod get_layout;
 pub use get_layout::*;
 
@@ -192,6 +194,64 @@ impl ExtParseTree {
 
         // Layout no longer needs to be mutable.
         Ok(Some(layout))
+    }
+
+    /// Obtains list of keys in defsrc block in given [`ExtParseTree`].
+    /// * It doesn't search includes.
+    /// * Returns `Err` if found more than 1 defsrc, or `defsrc` contains a list.
+    /// * Returns `Ok(None)` if found 0 defsrc blocks.
+    /// * Returns `Ok(Some)` otherwise.
+    pub fn defsrc_keys<'a>(&'a self) -> anyhow::Result<Option<Vec<String>>> {
+        let mut defsrc: Option<&'a NodeList> = None;
+
+        for top_level_item in self.0.iter() {
+            let top_level_list = match &top_level_item.expr {
+                Expr::Atom(_) => continue,
+                Expr::List(list) => list,
+            };
+
+            let first_item = match top_level_list.get(0) {
+                Some(x) => x,
+                None => continue,
+            };
+
+            let first_atom = match &first_item.expr {
+                Expr::Atom(x) => x,
+                Expr::List(_) => continue,
+            };
+
+            if let "defsrc" = first_atom.as_str() {
+                match defsrc {
+                    Some(_) => {
+                        return Err(anyhow!("multiple `defsrc` definitions in a single file"));
+                    }
+                    None => {
+                        defsrc = Some(top_level_list);
+                    }
+                }
+            }
+        }
+
+        let defsrc = match defsrc {
+            Some(x) => x,
+            None => {
+                // defsrc not found in this file, but it may be in another.
+                return Ok(None);
+            }
+        };
+
+        let result: Vec<String> = defsrc
+            .iter()
+            .skip(1)
+            .map(|x| {
+                Ok(match &x.expr {
+                    Expr::List(_) => return Err(anyhow!("found a list in `defsrc`")),
+                    Expr::Atom(x) => x.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Some(result))
     }
 }
 

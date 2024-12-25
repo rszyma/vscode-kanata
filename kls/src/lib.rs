@@ -8,7 +8,10 @@ use crate::{
     helpers::{lsp_range_from_span, path_to_url, HashSet},
 };
 use anyhow::{anyhow, bail};
-use formatter::Formatter;
+use formatter::{
+    ext_tree::{Expr, ParseTreeNode},
+    Formatter,
+};
 use kanata_parser::{
     cfg::{sexpr::Span, FileContentProvider, ParseError},
     lsp_hints::InactiveCode,
@@ -18,14 +21,15 @@ use lsp_types::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, GotoDefinition, Initialize, Request},
+    request::{Formatting, GotoDefinition, HoverRequest, Initialize, Request},
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, FileOperationFilter,
-    FileOperationPattern, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
-    InitializeResult, LocationLink, Position, PositionEncodingKind, PublishDiagnosticsParams,
-    SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend, TextDocumentItem,
-    TextDocumentSyncKind, TextEdit, Url, VersionedTextDocumentIdentifier,
+    FileOperationPattern, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, InitializeParams, InitializeResult, LanguageString, LocationLink, MarkedString,
+    Position, PositionEncodingKind, PublishDiagnosticsParams, SemanticTokenModifier,
+    SemanticTokenType, SemanticTokensLegend, TextDocumentItem, TextDocumentSyncKind, TextEdit, Url,
+    VersionedTextDocumentIdentifier,
 };
 use serde::Deserialize;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -34,8 +38,10 @@ use std::{
     fmt::Display,
     path::{self, Path, PathBuf},
     str::{FromStr, Split},
+    vec,
 };
 use wasm_bindgen::prelude::*;
+use web_sys::console::log;
 
 mod helpers;
 use helpers::{
@@ -158,9 +164,8 @@ impl Kanata {
         let text = match text_or_not {
             Ok(text) => text,
             Err(err) => {
-                return KlsParserOutput {
+                return KlsParserOutput::Err {
                     errors: vec![err.clone()],
-                    ..Default::default()
                 }
             }
         };
@@ -390,6 +395,7 @@ impl KanataLanguageServer {
                 )),
                 definition_provider: Some(lsp_types::OneOf::Left(true)),
                 document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
+                hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
                 workspace: Some(lsp_types::WorkspaceServerCapabilities {
                     workspace_folders: Some(lsp_types::WorkspaceFoldersServerCapabilities {
                         supported: Some(false),
@@ -429,13 +435,11 @@ impl KanataLanguageServer {
             Initialized::METHOD => (),
             DidOpenTextDocument::METHOD => {
                 let DidOpenTextDocumentParams { text_document } = from_value(params).unwrap();
-
                 log!("opening: {}", text_document.uri);
                 if self.upsert_document(text_document).is_some() {
                     log!("reopened tracked doc");
                 }
-
-                let (diagnostics, _, _) = self.parse();
+                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
             // We don't care when a document is closed -- we care about all Kanata files in a
@@ -510,7 +514,7 @@ impl KanataLanguageServer {
                     log!("detected file deletion: {}", uri);
                     let removed_docs = self.remove_tracked_documents_in_dir(&uri);
                     if !removed_docs.is_empty() {
-                        let (diagnostics, _, _) = self.parse();
+                        let KlsParsedWorkspace { diagnostics, .. } = self.parse();
                         self.send_diagnostics(&diagnostics);
                     }
                 }
@@ -518,7 +522,7 @@ impl KanataLanguageServer {
 
             DidSaveTextDocument::METHOD => {
                 let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
-                let (diagnostics, _, _) = self.parse();
+                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
                 self.send_diagnostics(&diagnostics);
             }
 
@@ -607,13 +611,19 @@ impl KanataLanguageServer {
         params: &GotoDefinitionParams,
     ) -> Option<GotoDefinitionResponse> {
         log!("========= on_go_to_definition_impl ========");
-        let (_, definition_locations_per_doc, reference_locations_per_doc) = self.parse();
+
+        let KlsParsedWorkspace {
+            def_locs: definition_locations_per_doc,
+            ref_locs: reference_locations_per_doc,
+            ..
+        } = self.parse();
+
         let source_doc_uri = &params.text_document_position_params.text_document.uri;
         let match_all_defs = match self.workspace_options {
             WorkspaceOptions::Single { .. } => false,
             WorkspaceOptions::Workspace { .. } => true,
         };
-        let definition_link = match navigation::definition_location(
+        let definition_link = match navigation::goto_definition_for_token_at_pos(
             &params.text_document_position_params.position,
             source_doc_uri,
             &definition_locations_per_doc,
@@ -663,7 +673,7 @@ impl KanataLanguageServer {
             WorkspaceOptions::Single { .. } => false,
             WorkspaceOptions::Workspace { .. } => true,
         };
-        let references = navigation::references(
+        let references = navigation::references_for_definition_at_pos(
             position,
             source_doc_uri,
             definition_locations_by_doc,
@@ -694,6 +704,146 @@ impl KanataLanguageServer {
                 });
                 Some(acc)
             })
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onHover)]
+    pub fn on_hover(&mut self, params: JsValue) -> JsValue {
+        type Params = <HoverRequest as Request>::Params;
+        type Result = <HoverRequest as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        let result = self.on_hover_impl(&params);
+        to_value::<Result>(&result).expect("no conversion error")
+    }
+
+    fn on_hover_impl(&mut self, params: &HoverParams) -> Option<Hover> {
+        let doc_uri = &params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let src = &self
+            .documents
+            .get(doc_uri)
+            .expect("document should be cached")
+            .text;
+
+        // TODO: cache tree?
+        let (tree, _) = match formatter::ext_tree::parse_into_ext_tree_and_root_span(src) {
+            Ok(x) => x,
+            Err(_) => {
+                log!("hover: failed to parse current file into tree");
+                return None;
+            }
+        };
+
+        // Get list of keys in defsrc.
+
+        let defsrc_keys = formatter::defsrc_layout::get_defsrc_keys(
+            &self.workspace_options,
+            &self.documents,
+            doc_uri,
+            &tree,
+        );
+        let defsrc_keys = match defsrc_keys {
+            Ok(x) => x,
+            Err(e) => {
+                log!("hover: get_defsrc_keys: {}", e);
+                return None;
+            }
+        };
+        let defsrc_keys = match defsrc_keys {
+            Some(x) => x,
+            None => {
+                log!("hover: get_defsrc_keys: defsrc not found (?)");
+                return None;
+            }
+        };
+
+        let path_to_node = match tree.path_to_node_by_lsp_position(pos) {
+            Ok(x) => x,
+            Err(err) => {
+                log!("hover: tree.path_to_node_by_lsp_position: {:?}", err);
+                return None;
+            }
+        };
+
+        // Check if the top-level item is valid for showing hover hints
+        // (we only want to show hovers for deflayer keys (for now)).
+        match path_to_node.first() {
+            Some(toplevel_deflayer_index) => {
+                let node = tree.0.get(*toplevel_deflayer_index as usize);
+                let node = match node {
+                    Some(x) => x,
+                    None => {
+                        log!(
+                            "hover: toplevel item with index {} doesn't exist (bug?)",
+                            toplevel_deflayer_index
+                        );
+                        return None;
+                    }
+                };
+                match &node.expr {
+                    Expr::Atom(_) => return None,
+                    Expr::List(node_list) => {
+                        if let Some(&ParseTreeNode {
+                            expr: Expr::Atom(ref atom),
+                            ..
+                        }) = node_list.get(0)
+                        {
+                            if atom != "deflayer" {
+                                return None;
+                            }
+                        } else {
+                            return None;
+                        }
+
+                        // Only give hover hints if deflayer has same number of items as defsrc.
+                        if node_list.len() - 2 != defsrc_keys.len() {
+                            log!(
+                                "hover: skipping key hints: deflayer vs defsrc item count mismatch"
+                            );
+                            return None;
+                        }
+                    }
+                }
+            }
+            None => {
+                log!("hover: path_to_node is empty (this is a bug!)");
+                return None;
+            }
+        }
+
+        let key_index_in_deflayer = match path_to_node.last() {
+            Some(x) => {
+                if *x < 2 {
+                    // hovering over "deflayer" keyword or layer name
+                    return None;
+                }
+                (x - 2) as usize
+            }
+            None => {
+                log!("hover: get_defsrc_keys: last node not found (???)");
+                return None;
+            }
+        };
+
+        let text_to_display: String = match defsrc_keys.get(key_index_in_deflayer) {
+            Some(x) => x.clone(),
+            None => {
+                log!(
+                    "hover: defsrc key with such index not found: {}",
+                    key_index_in_deflayer
+                );
+                return None;
+            }
+        };
+
+        Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::LanguageString(LanguageString {
+                language: "kanata".to_owned(),
+                value: format!("{text_to_display} ;; on defsrc"),
+            })),
+            range: None,
+        })
     }
 }
 
@@ -908,13 +1058,7 @@ impl KanataLanguageServer {
             .collect()
     }
 
-    fn parse(
-        &self,
-    ) -> (
-        Diagnostics,
-        HashMap<Url, DefinitionLocations>,
-        HashMap<Url, ReferenceLocations>,
-    ) {
+    fn parse(&self) -> KlsParsedWorkspace {
         let docs = self
             .documents
             .values()
@@ -936,48 +1080,52 @@ impl KanataLanguageServer {
                 let mut references: HashMap<Url, ReferenceLocations> = Default::default();
 
                 for doc in docs {
-                    let KlsParserOutput {
-                        errors,
-                        inactive_codes,
-                        definition_locations,
-                        reference_locations,
-                    } = self.parse_a_single_file_in_workspace(doc);
-                    errs.extend(errors);
-                    inactives.extend(inactive_codes);
-                    definitions.insert(doc.uri.clone(), definition_locations);
-                    references.insert(doc.uri.clone(), reference_locations);
+                    match self.parse_a_single_file_in_workspace(doc) {
+                        KlsParserOutput::Ok {
+                            inactive_codes,
+                            definition_locations,
+                            reference_locations,
+                        } => {
+                            inactives.extend(inactive_codes);
+                            definitions.insert(doc.uri.clone(), definition_locations);
+                            references.insert(doc.uri.clone(), reference_locations);
+                        }
+                        KlsParserOutput::Err { errors } => {
+                            errs.extend(errors);
+                        }
+                    }
                 }
                 (errs, inactives, definitions, references)
             }
             WorkspaceOptions::Workspace {
                 main_config_file,
                 root,
-            } => {
-                let KlsParserOutput {
-                    errors,
+            } => match self.parse_workspace(main_config_file, root) {
+                KlsParserOutput::Ok {
                     inactive_codes,
                     definition_locations,
                     reference_locations,
-                } = self.parse_workspace(main_config_file, root);
+                } => {
+                    let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
+                    let mut references: HashMap<Url, ReferenceLocations> = Default::default();
 
-                let mut definitions: HashMap<Url, DefinitionLocations> = Default::default();
-                let mut references: HashMap<Url, ReferenceLocations> = Default::default();
+                    url_map_definitions!(alias, root, definitions, definition_locations.0);
+                    url_map_definitions!(variable, root, definitions, definition_locations.0);
+                    url_map_definitions!(virtual_key, root, definitions, definition_locations.0);
+                    url_map_definitions!(layer, root, definitions, definition_locations.0);
+                    url_map_definitions!(template, root, definitions, definition_locations.0);
 
-                url_map_definitions!(alias, root, definitions, definition_locations.0);
-                url_map_definitions!(variable, root, definitions, definition_locations.0);
-                url_map_definitions!(virtual_key, root, definitions, definition_locations.0);
-                url_map_definitions!(layer, root, definitions, definition_locations.0);
-                url_map_definitions!(template, root, definitions, definition_locations.0);
+                    url_map_references!(alias, root, references, reference_locations.0);
+                    url_map_references!(variable, root, references, reference_locations.0);
+                    url_map_references!(virtual_key, root, references, reference_locations.0);
+                    url_map_references!(layer, root, references, reference_locations.0);
+                    url_map_references!(template, root, references, reference_locations.0);
+                    url_map_references!(include, root, references, reference_locations.0);
 
-                url_map_references!(alias, root, references, reference_locations.0);
-                url_map_references!(variable, root, references, reference_locations.0);
-                url_map_references!(virtual_key, root, references, reference_locations.0);
-                url_map_references!(layer, root, references, reference_locations.0);
-                url_map_references!(template, root, references, reference_locations.0);
-                url_map_references!(include, root, references, reference_locations.0);
-
-                (errors, inactive_codes, definitions, references)
-            }
+                    (vec![], inactive_codes, definitions, references)
+                }
+                KlsParserOutput::Err { errors } => (errors, vec![], HashMap::new(), HashMap::new()),
+            },
         };
 
         let new_error_diags = parse_errors
@@ -1044,6 +1192,17 @@ impl KanataLanguageServer {
         if self.dim_inactive_config_items {
             diagnostics.extend(new_inactive_codes_diags);
         }
-        (diagnostics, identifiers, references)
+
+        KlsParsedWorkspace {
+            diagnostics,
+            def_locs: identifiers,
+            ref_locs: references,
+        }
     }
+}
+
+struct KlsParsedWorkspace {
+    diagnostics: Diagnostics,
+    def_locs: HashMap<Url, DefinitionLocations>,
+    ref_locs: HashMap<Url, ReferenceLocations>,
 }

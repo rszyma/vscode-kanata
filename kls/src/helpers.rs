@@ -105,7 +105,10 @@ pub struct LocationInfo {
 pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
 
 impl DefinitionLocations {
-    pub fn search_references_at_position(&self, pos: &lsp_types::Position) -> Option<LocationInfo> {
+    pub fn search_references_for_token_at_position(
+        &self,
+        pos: &lsp_types::Position,
+    ) -> Option<LocationInfo> {
         log!("looking for references @ {:?}", pos);
         for ((name, span), ref_kind) in chain!(
             zip(&self.0.alias, repeat(ReferenceKind::Alias)),
@@ -136,11 +139,11 @@ impl DefinitionLocations {
 pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
 
 impl ReferenceLocations {
-    pub fn search_definitions_at_position(
+    pub fn definition_for_reference_at_position(
         &self,
         pos: &lsp_types::Position,
     ) -> Option<LocationInfo> {
-        log!("looking for definitions @ {:?}", pos);
+        log!("looking for definition of token @ {:?}", pos);
         for ((name, spans), ref_kind) in chain!(
             zip(&self.0.alias.0, repeat(ReferenceKind::Alias)),
             zip(&self.0.variable.0, repeat(ReferenceKind::Variable)),
@@ -194,12 +197,16 @@ pub fn lsp_range_from_span(span: &Span) -> lsp_types::Range {
     }
 }
 
-#[derive(Default)]
-pub struct KlsParserOutput {
-    pub errors: Vec<CustomParseError>,
-    pub inactive_codes: Vec<InactiveCode>,
-    pub definition_locations: DefinitionLocations,
-    pub reference_locations: ReferenceLocations,
+#[allow(clippy::large_enum_variant)] // not created that often
+pub enum KlsParserOutput {
+    Ok {
+        inactive_codes: Vec<InactiveCode>,
+        definition_locations: DefinitionLocations,
+        reference_locations: ReferenceLocations,
+    },
+    Err {
+        errors: Vec<CustomParseError>,
+    },
 }
 
 pub fn parse_wrapper(
@@ -209,9 +216,8 @@ pub fn parse_wrapper(
     def_local_keys_variant_to_apply: &str,
     env_vars: &Vec<(String, String)>,
 ) -> KlsParserOutput {
-    let mut result = KlsParserOutput::default();
     let parsed_state = &mut kanata_parser::cfg::ParserState::default();
-    let _ = kanata_parser::cfg::parse_cfg_raw_string(
+    let result: anyhow::Result<KlsParserOutput> = kanata_parser::cfg::parse_cfg_raw_string(
         main_cfg_text,
         parsed_state,
         main_cfg_path,
@@ -224,27 +230,29 @@ pub fn parse_wrapper(
             "parsed file `{}` without errors",
             main_cfg_path.to_string_lossy(),
         );
-        result
-            .inactive_codes
-            .extend(parsed_state.lsp_hints.borrow().inactive_code.clone());
-        result.definition_locations =
-            DefinitionLocations(parsed_state.lsp_hints.borrow().definition_locations.clone());
-        result.reference_locations =
-            ReferenceLocations(parsed_state.lsp_hints.borrow().reference_locations.clone());
+        KlsParserOutput::Ok {
+            inactive_codes: parsed_state.lsp_hints.borrow().inactive_code.clone(),
+            definition_locations: DefinitionLocations(
+                parsed_state.lsp_hints.borrow().definition_locations.clone(),
+            ),
+            reference_locations: ReferenceLocations(
+                parsed_state.lsp_hints.borrow().reference_locations.clone(),
+            ),
+        }
     })
-    .map_err(|e: ParseError| {
+    .or_else(|e: ParseError| {
         let e = CustomParseError::from_parse_error(
             e,
             main_cfg_path.to_string_lossy().to_string().as_str(),
         );
-        result.errors.push(e.clone());
         log!(
             "parsing file `{}` resulted in error: `{}`",
             e.span.clone().file_name(),
             e.msg,
         );
+        Ok(KlsParserOutput::Err { errors: vec![e] })
     });
-    result
+    result.expect("no err")
 }
 
 pub fn path_to_url(path: &Path, root_folder: &Url) -> anyhow::Result<Url> {

@@ -1,14 +1,16 @@
 use anyhow::anyhow;
+use itertools::Itertools;
 use kanata_parser::cfg::{
     sexpr::{self, Position, SExpr, SExprMetaData, Span, Spanned},
     ParseError,
 };
-use std::{
-    fmt::{Debug, Display},
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
+/// ExtParseTree exists to allow efficient modification of nodes, with intention of combining back
+/// later to the original source form, easily done by just calling .string() on it.
+///
+/// One downside of this form, is that nodes don't hold span/position info. So random access
+/// by position will be at best O(n).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExtParseTree(pub NodeList);
 
@@ -60,6 +62,31 @@ impl ExtParseTree {
         }
     }
 
+    pub fn _get_node_by_path(&self, path: &[usize]) -> anyhow::Result<&Expr> {
+        let mut head: &NodeList = &self.0;
+        let last_path_index = path.len() - 1;
+        for (path_index, &i) in path.iter().enumerate() {
+            let node = match head.get(i) {
+                Some(x) => x,
+                None => panic!("path out-of-bounds on path index {path_index} "),
+            };
+            if path_index == last_path_index {
+                return Ok(&node.expr);
+            }
+            match &node.expr {
+                Expr::Atom(_) => {
+                    return Err(anyhow!(
+                        "atom found in the middle of path, while it's only allowed at the end"
+                    ));
+                }
+                Expr::List(xs) => {
+                    head = xs;
+                }
+            }
+        }
+        unreachable!()
+    }
+
     pub fn includes(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut result = vec![];
         for top_level_block in self.0.iter() {
@@ -89,6 +116,13 @@ impl ExtParseTree {
             };
         }
         Ok(result)
+    }
+
+    pub fn path_to_node_by_lsp_position(
+        &self,
+        pos: lsp_types::Position,
+    ) -> anyhow::Result<Vec<u32>> {
+        self.0.path_to_node_by_lsp_pos(pos, &mut 0, &mut 0)
     }
 }
 
@@ -212,6 +246,74 @@ impl NodeList {
             NodeList::EmptyList(_) => [].iter_mut(), // Return an empty mutable iterator for EmptyList
         }
     }
+
+    fn path_to_node_by_lsp_pos(
+        &self,
+        pos: lsp_types::Position,
+        line: &mut u32,
+        chars_since_newline: &mut u32,
+    ) -> Result<Vec<u32>, anyhow::Error> {
+        for (i, current_node) in self.iter().enumerate() {
+            let ParseTreeNode {
+                pre_metadata,
+                expr,
+                post_metadata,
+            } = current_node;
+
+            for m in pre_metadata {
+                *line += m.to_string().encode_utf16().fold(0, |acc, n| {
+                    if n == b'\n' as u16 {
+                        *chars_since_newline = 0;
+                        acc + 1
+                    } else {
+                        *chars_since_newline += 1;
+                        acc
+                    }
+                });
+            }
+            if *line > pos.line {
+                return Err(anyhow!("position is inside metadata (1)"));
+            }
+
+            match expr {
+                Expr::Atom(atom) => {
+                    let len: u32 = atom.encode_utf16().collect_vec().len() as u32;
+                    if *line == pos.line {
+                        let at_least_lower_bound = pos.character >= *chars_since_newline;
+                        let below_upper_bound = pos.character < *chars_since_newline + len;
+                        if at_least_lower_bound && below_upper_bound {
+                            return Ok(vec![i as u32]);
+                        }
+                    }
+                    *chars_since_newline += len;
+                }
+                Expr::List(xs) => {
+                    *chars_since_newline += 1; // account for '('
+                    if let Ok(mut v) = xs.path_to_node_by_lsp_pos(pos, line, chars_since_newline) {
+                        v.insert(0, i as u32);
+                        return Ok(v);
+                    }
+                    *chars_since_newline += 1; // account for ')'
+                }
+            };
+
+            for m in post_metadata {
+                *line += m.to_string().encode_utf16().fold(0, |acc, n| {
+                    if n == b'\n' as u16 {
+                        *chars_since_newline = 0;
+                        acc + 1
+                    } else {
+                        *chars_since_newline += 1;
+                        acc
+                    }
+                });
+            }
+            if *line > pos.line {
+                return Err(anyhow!("position is inside metadata (2)"));
+            }
+        }
+        Err(anyhow!("no match in this path"))
+    }
 }
 
 impl Default for NodeList {
@@ -297,8 +399,7 @@ impl Display for ParseTreeNode {
     }
 }
 
-/// Parses config from text and combines both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
-#[allow(unused)]
+#[cfg(test)]
 pub fn parse_into_ext_tree(src: &str) -> std::result::Result<ExtParseTree, ParseError> {
     parse_into_ext_tree_and_root_span(src).map(|(x1, _)| x1)
 }
@@ -310,8 +411,7 @@ pub fn parse_into_ext_tree(src: &str) -> std::result::Result<ExtParseTree, Parse
 pub struct CustomSpan<'a> {
     pub start: Position,
     pub end: Position,
-    pub file_name: String,
-    pub file_content: &'a str,
+    pub file_content: &'a str, // used for utf8 <-> utf16 conversions
 }
 
 impl<'a> From<CustomSpan<'a>> for Span {
@@ -319,18 +419,18 @@ impl<'a> From<CustomSpan<'a>> for Span {
         Span {
             start: val.start,
             end: val.end,
-            file_name: val.file_name.into(),
+            file_name: "".into(),
             file_content: val.file_content.into(),
         }
     }
 }
 
-/// Parses config from text and combines both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
+/// Parses config from text, combining both [`SExpr`] and [`SExprMetaData`] into [`ExtParseTree`].
+/// The result can be loselessly combined back into the original form.
 pub fn parse_into_ext_tree_and_root_span(
     src: &str,
 ) -> std::result::Result<(ExtParseTree, CustomSpan<'_>), ParseError> {
-    let filename = "";
-    let (exprs, exprs_ext) = sexpr::parse_(src, filename, false)?;
+    let (exprs, exprs_ext) = sexpr::parse_(src, "", false)?;
     let exprs: Vec<SExpr> = exprs.into_iter().map(SExpr::List).collect();
     let exprs_len = exprs.len();
     let last_sexpr_end = exprs.last().map(|x| x.span().end).unwrap_or_default();
@@ -344,7 +444,6 @@ pub fn parse_into_ext_tree_and_root_span(
                 last_metadata_end
             }
         },
-        file_name: filename.to_string(),
         file_content: src,
     };
     let exprs = {
@@ -446,6 +545,8 @@ impl<'a> SExprCustom {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use crate::log;
 
@@ -677,5 +778,51 @@ mod tests {
             .expect("parses")
             .includes();
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_path_to_node_by_lsp_position_oneline() {
+        let test_table = [
+            (0, 0, false, vec![]),       // "("
+            (0, 1, false, vec![]),       // "("
+            (0, 2, true, vec![0, 0, 0]), // "1"
+            (0, 3, false, vec![]),       // " "
+            (0, 4, true, vec![0, 0, 1]), // "2"
+            (0, 5, false, vec![]),       // ")"
+            (0, 6, false, vec![]),       // " "
+            (0, 7, true, vec![0, 1]),    // "3"
+            (0, 8, true, vec![0, 1]),    // "4"
+            (0, 9, true, vec![0, 1]),    // "5"
+            (0, 10, false, vec![]),      // " "
+            (0, 11, false, vec![]),      // " "
+            (0, 12, true, vec![0, 2]),   // "6"
+            (0, 13, false, vec![]),      // ")"
+            (0, 14, false, vec![]),      // eof
+        ];
+
+        for ref test @ (line, char, expect_ok, ref expected_arr) in test_table {
+            dbg!(&test);
+            let pos: lsp_types::Position = lsp_types::Position::new(line, char);
+            let r = parse_into_ext_tree("((1 2) 345  6)")
+                .expect("should parse")
+                .path_to_node_by_lsp_position(pos);
+
+            if expect_ok {
+                let r = r.expect("finds path");
+                assert_eq!(r, *expected_arr);
+            } else {
+                r.expect_err("should error, because it's out of node bounds but it returned Ok");
+            }
+        }
+    }
+
+    #[test]
+    fn test_path_to_node_by_lsp_position_multiline() {
+        let pos: lsp_types::Position = lsp_types::Position::new(4, 3);
+        let r = parse_into_ext_tree("\n(1\n) \n ;; comment \n\t (2) ")
+            .expect("parses")
+            .path_to_node_by_lsp_position(pos)
+            .expect("finds path");
+        assert_eq!(r, vec![1, 0]);
     }
 }

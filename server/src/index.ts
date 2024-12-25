@@ -14,17 +14,25 @@ connection.onInitialize((params: InitializeParams) => {
     params,
     (params: PublishDiagnosticsParams) => connection.sendDiagnostics(params),
   );
+
   connection.onNotification((...args) => kls.onNotification(...args));
+
   connection.onDocumentFormatting((...args) =>
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     kls.onDocumentFormatting(args[0]),
   );
+
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   connection.onDefinition((...args) => kls.onDefinition(args[0]));
-  connection.languages.semanticTokens.on((...args) =>
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-    kls.onSemanticTokens(args[0]),
-  );
+
+  // connection.languages.semanticTokens.on((...args) =>
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+  //   kls.onSemanticTokens(args[0]),
+  // );
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  connection.onHover((...args) => kls.onHover(args[0]));
+
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
   return kls.initialize(params);
 });

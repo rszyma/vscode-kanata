@@ -14,53 +14,53 @@ pub struct GotoDefinitionLink {
     pub target_filename: String,
 }
 
-pub fn definition_location(
+pub fn goto_definition_for_token_at_pos(
     pos: &Position,
     source_doc: &Url,
     definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
     reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
-    match_all_defs: bool,
+    search_all_docs: bool,
 ) -> Option<GotoDefinitionLink> {
     let source_doc_reference_locations = reference_locations_by_doc.get(source_doc)?;
 
-    let location_info = match source_doc_reference_locations.search_definitions_at_position(pos) {
-        Some(x) => x,
-        None => return None,
-    };
-    log!("{:?}", &location_info);
+    let definition_loc =
+        source_doc_reference_locations.definition_for_reference_at_position(pos)?;
+    log!("{:?}", &definition_loc);
 
-    let mut map: HashMap<Url, DefinitionLocations> = HashMap::new();
-    let defs_iter: std::collections::hash_map::Iter<Url, DefinitionLocations> = if match_all_defs {
-        definition_locations_by_doc.iter()
-    } else {
-        let item: DefinitionLocations =
-            definition_locations_by_doc.get(source_doc).unwrap().clone();
-        map.insert(source_doc.clone(), item);
-        map.iter()
-    };
-    for (_, definition_locations) in defs_iter {
+    let mut map: HashMap<Url, DefinitionLocations> = HashMap::new(); // todo: inline in else clause?
+    let definitions_per_file: std::collections::hash_map::Iter<Url, DefinitionLocations> =
+        if search_all_docs {
+            definition_locations_by_doc.iter()
+        } else {
+            let item: DefinitionLocations =
+                definition_locations_by_doc.get(source_doc).unwrap().clone();
+            map.insert(source_doc.clone(), item);
+            map.iter()
+        };
+    for (_, defs_in_file) in definitions_per_file {
         use ReferenceKind::*;
-        let location_map = match location_info.ref_kind {
-            Alias => &definition_locations.0.alias,
-            Variable => &definition_locations.0.variable,
-            VirtualKey => &definition_locations.0.virtual_key,
-            Layer => &definition_locations.0.layer,
-            Template => &definition_locations.0.template,
+        let location_map = match definition_loc.ref_kind {
+            Alias => &defs_in_file.0.alias,
+            Variable => &defs_in_file.0.variable,
+            VirtualKey => &defs_in_file.0.virtual_key,
+            Layer => &defs_in_file.0.layer,
+            Template => &defs_in_file.0.template,
             Include => {
+                // Short cirtuit since we target_range will be always zero.
                 return {
                     Some(GotoDefinitionLink {
-                        source_range: location_info.source_range,
+                        source_range: definition_loc.source_range,
                         target_range: Range::default(),
-                        target_filename: location_info.ref_name,
+                        target_filename: definition_loc.ref_name,
                     })
                 };
             }
         };
 
         let loc = location_map
-            .get(&location_info.ref_name)
+            .get(&definition_loc.ref_name)
             .map(|span| GotoDefinitionLink {
-                source_range: location_info.source_range,
+                source_range: definition_loc.source_range,
                 target_range: lsp_range_from_span(span),
                 target_filename: span.file_name(),
             });
@@ -75,8 +75,9 @@ pub fn definition_location(
     None
 }
 
-pub fn references(
-    pos: &Position,
+// Returns None if the token at given position is not a definition.
+pub fn references_for_definition_at_pos(
+    source_pos: &Position,
     source_doc: &Url,
     definition_locations_by_doc: &HashMap<Url, DefinitionLocations>,
     reference_locations_by_doc: &HashMap<Url, ReferenceLocations>,
@@ -84,10 +85,11 @@ pub fn references(
 ) -> Option<Vec<GotoDefinitionLink>> {
     let source_doc_definition_locations = definition_locations_by_doc.get(source_doc)?;
 
-    let location_info = match source_doc_definition_locations.search_references_at_position(pos) {
-        Some(x) => x,
-        None => return None,
-    };
+    let location_info =
+        match source_doc_definition_locations.search_references_for_token_at_position(source_pos) {
+            Some(x) => x,
+            None => return None,
+        };
     log!("{:?}", &location_info);
 
     let mut reference_links: Vec<GotoDefinitionLink> = Vec::new();

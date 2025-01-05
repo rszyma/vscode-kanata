@@ -63,10 +63,27 @@ impl ExtParseTree {
                 continue;
             }
 
+            // trim spaces at the end of each line in deflayer
+            let defsrc_layout: Vec<Vec<usize>> = {
+                let mut layout = defsrc_layout.to_vec();
+                for x in layout.iter_mut() {
+                    // at least 2 items means that it's newline
+                    if x.len() >= 2 {
+                        if let Some(first) = x.get_mut(0) {
+                            *first = 1;
+                        }
+                    }
+                }
+                layout
+            };
+
             let last_expr_index = deflayer.len() - 3;
             for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
                 let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
 
+                // NOTE: we're ignoring `pre_metadata` here on purpose.
+                // We're assuming that the passed ExtTree has not been modified after parsing,
+                // and when first parsing we only save comments in `post_medatata`.
                 let post_metadata: Vec<_> = deflayer_item.post_metadata.drain(..).collect();
 
                 let comments: Vec<_> = post_metadata
@@ -297,20 +314,29 @@ fn formatted_deflayer_node_metadata_without_comments(
     is_the_last_expr_in_deflayer: bool,
     line_ending: LineEndingSequence,
 ) -> Vec<Metadata> {
-    let mut result = if expr_graphemes_count < formatting_to_apply[0] {
-        // Expr fits inside slot.
-        vec![Metadata::Whitespace(
-            " ".repeat(formatting_to_apply[0] - expr_graphemes_count),
-        )]
-    } else {
-        // Expr doesn't fit inside slot, but it's not at the end of line, we just
-        // add 1 space to separate from next expr.
-        if !is_the_last_expr_in_deflayer {
-            vec![Metadata::Whitespace(" ".to_string())]
-        } else {
+    let is_at_the_end_of_line = formatting_to_apply.len() >= 2;
+    #[allow(clippy::nonminimal_bool)]
+    let mut result =
+        if is_at_the_end_of_line || (!is_at_the_end_of_line && is_the_last_expr_in_deflayer) {
+            // space-before-newline / space-before-end-paren trimming
             vec![]
-        }
-    };
+        } else if expr_graphemes_count <= formatting_to_apply[0] {
+            // Expr fits inside slot.
+            let n = formatting_to_apply[0] - expr_graphemes_count;
+            if n > 0 {
+                vec![Metadata::Whitespace(" ".repeat(n))]
+            } else {
+                vec![]
+            }
+        } else {
+            // Expr doesn't fit inside slot, but it's not at the end of line, we just
+            // add 1 space to separate from next expr.
+            if !is_the_last_expr_in_deflayer {
+                vec![Metadata::Whitespace(" ".to_string())]
+            } else {
+                vec![]
+            }
+        };
 
     for n in &formatting_to_apply[1..] {
         let mut s = line_ending.to_string();
@@ -396,20 +422,38 @@ mod tests {
     use super::*;
 
     fn formats_correctly(input: &str, expected_output: &str) {
+        _formats_correctly(input, expected_output)
+            .expect("should not error in order to format correctly")
+    }
+
+    fn _formats_correctly(input: &str, expected_output: &str) -> anyhow::Result<()> {
         let mut tree = parse_into_ext_tree(input).expect("parses");
         let tab_size = 4;
-        if let Some(layout) = tree.defsrc_layout(tab_size).expect("no err") {
-            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true, LineEndingSequence::LF);
-        };
+
+        let defsrc_layout = tree
+            .defsrc_layout(tab_size)
+            .expect("no err")
+            .ok_or(anyhow!("expected Some"))?;
+        dbg!(&defsrc_layout);
+
+        tree.use_defsrc_layout_on_deflayers(&defsrc_layout, tab_size, true, LineEndingSequence::LF);
+
         assert_eq!(
             tree.to_string(),
             expected_output,
             "parsed tree did not equal to expected_result"
         );
+
+        Ok(())
     }
 
     fn should_not_format(input: &str) {
-        formats_correctly(input, input)
+        match _formats_correctly(input, input) {
+            Ok(_) => {}
+            Err(_) => {
+                // if it fails, it won't be formatted (I hope?)
+            }
+        }
     }
 
     #[test]
@@ -507,6 +551,14 @@ mod tests {
     }
 
     #[test]
+    fn spaces_at_the_end_of_each_line_in_deflayer_get_removed() {
+        formats_correctly(
+            "(defsrc caps\nbspc\npgup\npgdn\n) (deflayer base 3  \n4 \ngrv\n6\n)",
+            "(defsrc caps\nbspc\npgup\npgdn\n) (deflayer base 3\n4\ngrv\n6\n)",
+        );
+    }
+
+    #[test]
     fn line_comment_in_deflayer() {
         // regression test for the bug: wrong spacing in the newline after line
         // comment on last line
@@ -522,7 +574,7 @@ mod tests {
     #[test]
     fn indent_of_a_line_after_a_line_comment_is_correct() {
         // should pass with just newline
-        should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 \n  6)");
+        should_not_format("(defsrc 1  2\n  3) (deflayer base 4  5\n  6)");
         // and also with line comment
         should_not_format("(defsrc 1  2 \n  3) (deflayer base 4  5 ;;\n  6)");
         // https://github.com/rszyma/vscode-kanata/issues/15
@@ -567,8 +619,10 @@ mod tests {
         // 1. No panic (see https://github.com/rszyma/vscode-kanata/issues/20)
         // 2. CRLF line endings applying correctly.
 
-        let input = "(defsrc 1 \r\n 2)  (deflayer base 3 \r\n 4)";
-        let expected_output = input;
+        let [input, expected_output] = [
+            "(defsrc 1 \r\n 2)  (deflayer base 3 \r\n 4)",
+            "(defsrc 1 \r\n 2)  (deflayer base 3\r\n 4)", // one whitespace less because of eol space trimming
+        ];
 
         let mut tree = parse_into_ext_tree(input).expect("parses");
         let tab_size = 4;
@@ -578,6 +632,29 @@ mod tests {
         assert_eq!(
             tree.to_string(),
             expected_output,
+            "parsed tree did not equal to expected_result"
+        );
+    }
+
+    #[test]
+    fn test_defsrc_layout() {
+        let input = "(defsrc 1 \r\n 2\t 3)";
+        let tree = parse_into_ext_tree(input).expect("parses");
+
+        let tab_size = 4;
+        let output = tree
+            .defsrc_layout(tab_size)
+            .expect("no err")
+            .expect("is Some");
+
+        let expected_output = vec![
+            vec![2, 1], // "2" because "1 " is 2 chars, and 1 is a single space after crlf
+            vec![6],    // "2\t " -- 1 from char + 4 from tab + 1 space -> 6
+            vec![1],    // "3" has len 1
+        ];
+
+        assert_eq!(
+            output, expected_output,
             "parsed tree did not equal to expected_result"
         );
     }

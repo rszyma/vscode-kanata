@@ -63,6 +63,20 @@ impl ExtParseTree {
                 continue;
             }
 
+            // trim spaces at the end of each line in deflayer
+            let defsrc_layout: Vec<Vec<usize>> = {
+                let mut layout = defsrc_layout.to_vec();
+                for x in layout.iter_mut() {
+                    // at least 2 items means that it's newline
+                    if x.len() >= 2 {
+                        if let Some(first) = x.get_mut(0) {
+                            *first = 1;
+                        }
+                    }
+                }
+                layout
+            };
+
             let last_expr_index = deflayer.len() - 3;
             for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
                 let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
@@ -398,9 +412,16 @@ mod tests {
     fn formats_correctly(input: &str, expected_output: &str) {
         let mut tree = parse_into_ext_tree(input).expect("parses");
         let tab_size = 4;
-        if let Some(layout) = tree.defsrc_layout(tab_size).expect("no err") {
-            tree.use_defsrc_layout_on_deflayers(&layout, tab_size, true, LineEndingSequence::LF);
-        };
+
+        let defsrc_layout = tree
+            .defsrc_layout(tab_size)
+            .expect("no err")
+            .expect("is Some");
+
+        dbg!(&defsrc_layout);
+
+        tree.use_defsrc_layout_on_deflayers(&defsrc_layout, tab_size, true, LineEndingSequence::LF);
+
         assert_eq!(
             tree.to_string(),
             expected_output,
@@ -507,6 +528,14 @@ mod tests {
     }
 
     #[test]
+    fn spaces_at_the_end_of_each_line_in_deflayer_get_removed() {
+        formats_correctly(
+            "(defsrc caps\nbspc\npgup\n) (deflayer base 3  \n4 \n5\n)",
+            "(defsrc caps\nbspc\npgup\n) (deflayer base 3\n4\n5\n)",
+        );
+    }
+
+    #[test]
     fn line_comment_in_deflayer() {
         // regression test for the bug: wrong spacing in the newline after line
         // comment on last line
@@ -578,6 +607,29 @@ mod tests {
         assert_eq!(
             tree.to_string(),
             expected_output,
+            "parsed tree did not equal to expected_result"
+        );
+    }
+
+    #[test]
+    fn test_defsrc_layout() {
+        let input = "(defsrc 1 \r\n 2\t 3)";
+        let tree = parse_into_ext_tree(input).expect("parses");
+
+        let tab_size = 4;
+        let output = tree
+            .defsrc_layout(tab_size)
+            .expect("no err")
+            .expect("is Some");
+
+        let expected_output = vec![
+            vec![2, 1], // "2" because "1 " is 2 chars, and 1 is a single space after crlf
+            vec![6],    // "2\t " -- 1 from char + 4 from tab + 1 space -> 6
+            vec![1],    // "3" has len 1
+        ];
+
+        assert_eq!(
+            output, expected_output,
             "parsed tree did not equal to expected_result"
         );
     }

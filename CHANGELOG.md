@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.14.2
+
 * Fixed: deflayer formatter no longer adds extra whitespace at end of line ([#49](https://github.com/rszyma/vscode-kanata/issues/49))
 
 ### 0.14.1

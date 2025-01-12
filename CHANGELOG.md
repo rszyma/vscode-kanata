@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [bb3bdbf](https://github.com/jtroo/kanata/tree/bb3bdbf)
 
 ### 0.14.2
 

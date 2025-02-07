@@ -658,4 +658,10 @@ mod tests {
             "parsed tree did not equal to expected_result"
         );
     }
+
+    /// Regression test for https://github.com/rszyma/vscode-kanata/issues/51
+    #[test]
+    fn test_deflayer_slot_expand() {
+        should_not_format("(defsrc 1 2 3 4) (deflayer base 1 @a grv 4)");
+    }
 }

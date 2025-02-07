@@ -320,7 +320,7 @@ fn formatted_deflayer_node_metadata_without_comments(
         if is_at_the_end_of_line || (!is_at_the_end_of_line && is_the_last_expr_in_deflayer) {
             // space-before-newline / space-before-end-paren trimming
             vec![]
-        } else if expr_graphemes_count <= formatting_to_apply[0] {
+        } else if expr_graphemes_count < formatting_to_apply[0] {
             // Expr fits inside slot.
             let n = formatting_to_apply[0] - expr_graphemes_count;
             if n > 0 {

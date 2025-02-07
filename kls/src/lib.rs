@@ -891,7 +891,7 @@ impl KanataLanguageServer {
                 // Compare paths (`Split<char>`) by zipping them together and comparing pairwise.
                 let compare_paths = |(l, r): (Split<_>, Split<_>)| l.zip(r).all(|(l, r)| l == r);
                 // If all path segments match b/w dir & uri, uri is in dir and should be removed.
-                maybe_segments.map_or(false, compare_paths)
+                maybe_segments.is_some_and(compare_paths)
             });
         in_removed_dir
             .iter()

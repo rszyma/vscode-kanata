@@ -320,7 +320,7 @@ fn formatted_deflayer_node_metadata_without_comments(
         if is_at_the_end_of_line || (!is_at_the_end_of_line && is_the_last_expr_in_deflayer) {
             // space-before-newline / space-before-end-paren trimming
             vec![]
-        } else if expr_graphemes_count <= formatting_to_apply[0] {
+        } else if expr_graphemes_count < formatting_to_apply[0] {
             // Expr fits inside slot.
             let n = formatting_to_apply[0] - expr_graphemes_count;
             if n > 0 {
@@ -657,5 +657,11 @@ mod tests {
             output, expected_output,
             "parsed tree did not equal to expected_result"
         );
+    }
+
+    /// Regression test for https://github.com/rszyma/vscode-kanata/issues/51
+    #[test]
+    fn test_deflayer_slot_expand() {
+        should_not_format("(defsrc 1 2 3 4) (deflayer base 1 @a grv 4)");
     }
 }

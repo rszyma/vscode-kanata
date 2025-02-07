@@ -3,6 +3,7 @@
 ### Unreleased
 
 * Updated kanata to [bc55298](https://github.com/jtroo/kanata/tree/bc55298)
+* Fixed: deflayer formatter wrong formatting on oversized items ([#51](https://github.com/rszyma/vscode-kanata/issues/51))
 
 ### 0.14.6
 

@@ -86,10 +86,7 @@ pub fn references_for_definition_at_pos(
     let source_doc_definition_locations = definition_locations_by_doc.get(source_doc)?;
 
     let location_info =
-        match source_doc_definition_locations.search_references_for_token_at_position(source_pos) {
-            Some(x) => x,
-            None => return None,
-        };
+        source_doc_definition_locations.search_references_for_token_at_position(source_pos)?;
     log!("{:?}", &location_info);
 
     let mut reference_links: Vec<GotoDefinitionLink> = Vec::new();

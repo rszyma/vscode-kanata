@@ -23,7 +23,7 @@
   },
   "license": "LGPL-3.0",
   "engines": {
-    "node": "^20.12.2",
+    "node": "^22.13.1",
     "vscode": "^1.80.0"
   },
   "main": "./out/client.js",

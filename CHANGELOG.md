@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [a9dabfc](https://github.com/jtroo/kanata/tree/a9dabfc)
 
 ### 0.14.12
 

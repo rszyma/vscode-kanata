@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [480deff](https://github.com/jtroo/kanata/tree/480deff)
 
 ### 0.14.19
 

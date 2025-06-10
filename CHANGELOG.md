@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* Updated kanata to [480deff](https://github.com/jtroo/kanata/tree/480deff)
+* Updated kanata to [b1b4c85](https://github.com/jtroo/kanata/tree/b1b4c85)
 
 ### 0.14.19
 

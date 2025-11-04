@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [a982fff](https://github.com/jtroo/kanata/tree/a982fff)
 
 ### 0.14.27
 

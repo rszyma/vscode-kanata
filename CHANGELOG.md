@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.14.31
+
 * Updated kanata to [cdbbd18](https://github.com/jtroo/kanata/tree/cdbbd18)
 
 ### 0.14.30

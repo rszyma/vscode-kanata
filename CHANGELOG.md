@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.14.35
+
 * Updated kanata to [ed43b5c](https://github.com/jtroo/kanata/tree/ed43b5c)
 
 ### 0.14.34

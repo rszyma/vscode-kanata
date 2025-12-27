@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [dbe50f8](https://github.com/jtroo/kanata/tree/dbe50f8)
 
 ### 0.14.37
 

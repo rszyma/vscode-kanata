@@ -42,7 +42,7 @@ pub fn get_defsrc_layout(
                     .ok_or_else(|| {
                         anyhow!(
                             "included file is not present in the workspace: {}",
-                            file_uri.to_string()
+                            file_uri
                         )
                     })?;
 

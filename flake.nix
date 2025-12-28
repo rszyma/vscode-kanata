@@ -9,8 +9,15 @@
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      rust-overlay,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -42,6 +49,7 @@
             wasm-pack
             vsce
             (pkgs.writeShellScriptBin "ovsx" "${pkgs.nodejs_24}/bin/npx ovsx $@")
+            sccache
           ];
         };
       }

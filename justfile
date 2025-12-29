@@ -1,6 +1,7 @@
 _default:
     @just -l --unsorted
 
+# Build in debug mode.
 build:
     git submodule update
     make package

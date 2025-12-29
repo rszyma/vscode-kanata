@@ -5,13 +5,14 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 use crate::{
     formatter::defsrc_layout::LineEndingSequence,
-    helpers::{lsp_range_from_span, path_to_url, HashSet},
+    helpers::{lsp_range_from_span, path_to_url, to_js_value, HashSet},
 };
 use anyhow::{anyhow, bail};
 use formatter::{
     ext_tree::{Expr, ParseTreeNode},
     Formatter,
 };
+use itertools::Itertools;
 use kanata_parser::{
     cfg::{sexpr::Span, FileContentProvider, ParseError},
     lsp_hints::InactiveCode,
@@ -21,18 +22,21 @@ use lsp_types::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
     },
-    request::{Formatting, GotoDefinition, HoverRequest, Initialize, Request},
+    request::{
+        Formatting, GotoDefinition, HoverRequest, Initialize, PrepareRenameRequest, Rename, Request,
+    },
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     DocumentFormattingParams, FileChangeType, FileDelete, FileEvent, FileOperationFilter,
     FileOperationPattern, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
     HoverParams, InitializeParams, InitializeResult, LanguageString, LocationLink, MarkedString,
-    Position, PositionEncodingKind, PublishDiagnosticsParams, SemanticTokenModifier,
-    SemanticTokenType, SemanticTokensLegend, TextDocumentItem, TextDocumentSyncKind, TextEdit, Url,
-    VersionedTextDocumentIdentifier,
+    Position, PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, RenameParams,
+    SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend, TextDocumentItem,
+    TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, Url,
+    VersionedTextDocumentIdentifier, WorkspaceEdit,
 };
 use serde::Deserialize;
-use serde_wasm_bindgen::{from_value, to_value};
+use serde_wasm_bindgen::from_value;
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
@@ -337,7 +341,7 @@ impl KanataLanguageServer {
         type Params = <Initialize as Request>::Params;
         type Result = <Initialize as Request>::Result;
         let params = from_value::<Params>(params).expect("deserializes");
-        to_value::<Result>(&self.initialize_impl(&params)).expect("no conversion error")
+        to_js_value::<Result>(&self.initialize_impl(&params)).expect("no conversion error")
     }
 
     fn initialize_impl(&mut self, _params: &InitializeParams) -> InitializeResult {
@@ -396,6 +400,12 @@ impl KanataLanguageServer {
                 definition_provider: Some(lsp_types::OneOf::Left(true)),
                 document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
                 hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
+                rename_provider: Some(lsp_types::OneOf::Right(lsp_types::RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: lsp_types::WorkDoneProgressOptions {
+                        work_done_progress: Some(false),
+                    },
+                })),
                 workspace: Some(lsp_types::WorkspaceServerCapabilities {
                     workspace_folders: Some(lsp_types::WorkspaceFoldersServerCapabilities {
                         supported: Some(false),
@@ -536,7 +546,8 @@ impl KanataLanguageServer {
         type Params = <Formatting as Request>::Params;
         type Result = <Formatting as Request>::Result;
         let params = from_value::<Params>(params).expect("deserializes");
-        to_value::<Result>(&self.on_document_formatting_impl(&params)).expect("no conversion error")
+        to_js_value::<Result>(&self.on_document_formatting_impl(&params))
+            .expect("no conversion error")
     }
 
     /// Returns None on error.
@@ -602,7 +613,7 @@ impl KanataLanguageServer {
         type Params = <GotoDefinition as Request>::Params;
         type Result = <GotoDefinition as Request>::Result;
         let params = from_value::<Params>(params).expect("deserializes");
-        to_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
+        to_js_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
     }
 
     /// Returns None on error.
@@ -713,7 +724,7 @@ impl KanataLanguageServer {
         type Result = <HoverRequest as Request>::Result;
         let params = from_value::<Params>(params).expect("deserializes");
         let result = self.on_hover_impl(&params);
-        to_value::<Result>(&result).expect("no conversion error")
+        to_js_value::<Result>(&result).expect("no conversion error")
     }
 
     fn on_hover_impl(&mut self, params: &HoverParams) -> Option<Hover> {
@@ -845,6 +856,122 @@ impl KanataLanguageServer {
             range: None,
         })
     }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onPrepareRenameRequest)]
+    pub fn on_prepare_rename(&mut self, params: JsValue) -> JsValue {
+        type Params = <PrepareRenameRequest as Request>::Params;
+        type Result = <PrepareRenameRequest as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_prepare_rename_impl(&params)).expect("no conversion error")
+    }
+
+    fn on_prepare_rename_impl(
+        &mut self,
+        params: &TextDocumentPositionParams,
+    ) -> Option<PrepareRenameResponse> {
+        log!("========= on_prepare_rename_impl ========");
+
+        let (reference_locations_per_doc, definition_locations_per_doc) = {
+            let mut parsed_workspace = self.parse();
+            // TODO: support renaming included files
+            for (_, ref_loc) in parsed_workspace.ref_locs.iter_mut() {
+                ref_loc.0.include.0.clear();
+            }
+            (parsed_workspace.ref_locs, parsed_workspace.def_locs)
+        };
+
+        if let Some(found_definition) = definition_locations_per_doc
+            .get(&params.text_document.uri)?
+            .get_definition_at_position(&params.position)
+        {
+            return Some(PrepareRenameResponse::Range(found_definition.range));
+        }
+
+        if let Some(found_reference) = reference_locations_per_doc
+            .get(&params.text_document.uri)?
+            .get_reference_at_position(&params.position)
+        {
+            let range = if found_reference.ref_kind.has_prefix() {
+                let mut r = found_reference.range;
+                r.start.character += 1;
+                r
+            } else {
+                found_reference.range
+            };
+            return Some(PrepareRenameResponse::Range(range));
+        };
+
+        log!("on_prepare_rename_impl: not found any renameable token at the given position");
+        None
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onRenameRequest)]
+    pub fn on_rename(&mut self, params: JsValue) -> JsValue {
+        type Params = <Rename as Request>::Params;
+        type Result = <Rename as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_rename_impl(&params)).expect("no conversion error")
+    }
+
+    /// Returns None on error.
+    fn on_rename_impl(&mut self, params: &RenameParams) -> Option<WorkspaceEdit> {
+        log!("========= on_rename_impl ========");
+
+        let (reference_locations_per_doc, definition_locations_per_doc) = {
+            let mut parsed_workspace = self.parse();
+            // TODO: support renaming included files
+            for (_, ref_loc) in parsed_workspace.ref_locs.iter_mut() {
+                ref_loc.0.include.0.clear();
+            }
+            (parsed_workspace.ref_locs, parsed_workspace.def_locs)
+        };
+
+        let source_doc_uri = &params.text_document_position.text_document.uri;
+        let match_all_defs = match self.workspace_options {
+            WorkspaceOptions::Single { .. } => false,
+            WorkspaceOptions::Workspace { .. } => true,
+        };
+        let path_to_url_fn = |path: &str| match &self.workspace_options {
+            WorkspaceOptions::Single { .. } => Ok(source_doc_uri.clone()),
+            WorkspaceOptions::Workspace { root, .. } => path_to_url(Path::new(&path), root),
+        };
+        let symbol_locations = navigation::all_locations_of_symbol_at_pos(
+            &params.text_document_position.position,
+            source_doc_uri,
+            &definition_locations_per_doc,
+            &reference_locations_per_doc,
+            match_all_defs,
+            &path_to_url_fn,
+        );
+        log!("symbol locations found: {:#?}", symbol_locations);
+
+        let changes = symbol_locations
+            .iter()
+            .map(|x| {
+                (
+                    path_to_url_fn(&x.filename).unwrap(),
+                    TextEdit {
+                        range: if x.location_info.ref_kind.has_prefix() && !x.is_definition {
+                            let mut r = x.location_info.range;
+                            r.start.character += 1;
+                            r
+                        } else {
+                            x.location_info.range
+                        },
+                        new_text: params.new_name.clone(),
+                    },
+                )
+            })
+            .into_group_map();
+
+        Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        })
+    }
 }
 
 /// Individual LSP notification handlers.
@@ -907,7 +1034,7 @@ impl KanataLanguageServer {
         log!("sending diagnostics for {} files", diagnostics.len());
         let this = &JsValue::null();
         for params in diagnostics.values() {
-            let params = &to_value(&params).unwrap();
+            let params = &to_js_value(&params).unwrap();
             if let Err(e) = self.send_diagnostics_callback.call1(this, params) {
                 log!("send_diagnostics params:\n{:?}\nJS error: {:?}", params, e);
             }

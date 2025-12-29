@@ -84,7 +84,7 @@ impl CustomParseError {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ReferenceKind {
     Alias,
     Variable,
@@ -94,22 +94,33 @@ pub enum ReferenceKind {
     Include,
 }
 
-#[derive(Debug)]
+impl ReferenceKind {
+    pub fn has_prefix(&self) -> bool {
+        match self {
+            ReferenceKind::Alias => true,    // @
+            ReferenceKind::Variable => true, // $
+            ReferenceKind::VirtualKey => false,
+            ReferenceKind::Layer => false,
+            ReferenceKind::Template => false,
+            ReferenceKind::Include => false,
+        }
+    }
+}
+
+/// Location info of token, including prefix if any.
+#[derive(Debug, PartialEq)]
 pub struct LocationInfo {
     pub ref_kind: ReferenceKind,
     pub ref_name: String,
-    pub source_range: Range,
+    pub range: Range,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct DefinitionLocations(pub kanata_parser::lsp_hints::DefinitionLocations);
 
 impl DefinitionLocations {
-    pub fn search_references_for_token_at_position(
-        &self,
-        pos: &lsp_types::Position,
-    ) -> Option<LocationInfo> {
-        log!("looking for references @ {:?}", pos);
+    pub fn get_definition_at_position(&self, pos: &lsp_types::Position) -> Option<LocationInfo> {
+        log!("get_definition_at_position @ {:?}", pos);
         for ((name, span), ref_kind) in chain!(
             zip(&self.0.alias, repeat(ReferenceKind::Alias)),
             zip(&self.0.variable, repeat(ReferenceKind::Variable)),
@@ -126,11 +137,11 @@ impl DefinitionLocations {
                 return Some(LocationInfo {
                     ref_kind,
                     ref_name: name.to_owned(),
-                    source_range: range,
+                    range,
                 });
             }
         }
-        log!("search_references_at_position: not found any references");
+        log!("get_definition_at_position: not found");
         None
     }
 }
@@ -139,10 +150,7 @@ impl DefinitionLocations {
 pub struct ReferenceLocations(pub kanata_parser::lsp_hints::ReferenceLocations);
 
 impl ReferenceLocations {
-    pub fn definition_for_reference_at_position(
-        &self,
-        pos: &lsp_types::Position,
-    ) -> Option<LocationInfo> {
+    pub fn get_reference_at_position(&self, pos: &lsp_types::Position) -> Option<LocationInfo> {
         log!("looking for definition of token @ {:?}", pos);
         for ((name, spans), ref_kind) in chain!(
             zip(&self.0.alias.0, repeat(ReferenceKind::Alias)),
@@ -162,7 +170,7 @@ impl ReferenceLocations {
                     return Some(LocationInfo {
                         ref_kind,
                         ref_name: name.to_owned(),
-                        source_range: range,
+                        range,
                     });
                 }
             }
@@ -327,4 +335,11 @@ macro_rules! url_map_references {
             }
         }
     };
+}
+
+/// Converts a Rust value into a [`JsValue`].
+pub fn to_js_value<T: serde::ser::Serialize + ?Sized>(
+    value: &T,
+) -> std::result::Result<wasm_bindgen::JsValue, serde_wasm_bindgen::Error> {
+    value.serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
 }

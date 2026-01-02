@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* Updated kanata to [bcdc241](https://github.com/jtroo/kanata/tree/bcdc241)
 * Update syntax highlighting spec from kanata commit 81c8a32 to 35afe9 ([#57](https://github.com/rszyma/vscode-kanata/issues/57))
 
 ### 0.14.38

@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* New feature: symbol rename support ([#57](https://github.com/rszyma/vscode-kanata/issues/56))
 
 ### 0.14.39
 

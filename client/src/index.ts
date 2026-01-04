@@ -16,10 +16,12 @@ import {
   FileSystemWatcher,
   commands,
   ConfigurationTarget,
+  FileRenameEvent,
 } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
+  Middleware,
   ServerOptions,
   SettingMonitor,
   TransportKind,
@@ -28,6 +30,7 @@ import {
 } from "vscode-languageclient/node";
 
 const extensionName = "Kanata Configuration Language";
+const extensionId = "vscode-kanata";
 const outputChannel = window.createOutputChannel(extensionName);
 
 const docSelector: DocumentSelector = [
@@ -86,10 +89,6 @@ class Extension implements Disposable {
     this.ctx.subscriptions.push(
       workspace.onDidChangeConfiguration(this.restart()),
     );
-
-    // this.ctx.subscriptions.push(
-    //   languages.registerDefinitionProvider(docSelector, defProvider),
-    // );
   }
 
   async start() {
@@ -98,7 +97,7 @@ class Extension implements Disposable {
     if (openedWorkspaces) {
       if (openedWorkspaces.length >= 2) {
         await window.showInformationMessage(
-          "Multiple workspaces are currently not supported, only the first workspaces folder will be regarded.",
+          "Multiple workspaces are currently not supported, only the first workspace folder will be regarded.",
         );
       }
       root = openedWorkspaces.at(0);
@@ -176,7 +175,15 @@ class Extension implements Disposable {
       },
     };
 
-    this.client = new LanguageClient(extensionName, serverOpts, clientOpts);
+    const isForceDebug = false;
+
+    this.client = new LanguageClient(
+      extensionId,
+      extensionName,
+      serverOpts,
+      clientOpts,
+      isForceDebug,
+    );
 
     await this.client.start();
 

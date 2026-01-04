@@ -12,8 +12,7 @@ Available at
 - Open VSX - https://open-vsx.org/extension/rszyma/vscode-kanata
 
 This extension aims to stay up-to-date with latest kanata git.
-Whenever something changes in `parser` folder in kanata repository, at the end of the day,
-Github Actions will automatically build a new version of this extension with updated parser.
+Whenever something changes in `parser` folder in kanata repository, at the end of the day, Github Actions will automatically build a new version of this extension with updated parser.
 
 ## Features
 
@@ -33,15 +32,13 @@ Config will be parsed and validated, when saving document.
 
 ### Support for including other files
 
-If you use [`include`](https://github.com/jtroo/kanata/blob/main/docs/config.adoc#include-other-files)
-configuration items in your kanata config, make sure to adjust the following settings:
+If you use [`include`](https://github.com/jtroo/kanata/blob/main/docs/config.adoc#include-other-files) configuration items in your kanata config, make sure to adjust the following settings:
 - `vscode-kanata.includesAndWorkspaces`
 - `vscode-kanata.mainConfigFile`
 
 Important: Absolute paths in `include` blocks that point outside the opened workspace aren't supported.
 
-Also, if you work with multiple main files, and find yourself switching `mainConfigFile` often,
-there's a handy command palette entry:
+Also, if you work with multiple main files, and find yourself switching `mainConfigFile` often, there's a handy command palette entry:
 - `Kanata: Set current file as main`
 
 ### Formatter: auto-apply spacial layout of `defsrc` to all `deflayer`s
@@ -57,8 +54,15 @@ it in settings (search for "kanata.format").
 - CTRL+Click on a definition to reveal references.
 
 Implemented for aliases, variables, layers, virtualkeys, templates and includes.
-Supported in both single-mode and workspace (includes-enabled)
-mode.
+Supported in both single-mode and workspace (includes-enabled) mode.
+
+<!-- todo: gif here -->
+
+### Symbol rename
+
+Symbol rename is supported for everything that Goto Defintion supports, except for includes.
+
+By default, it can be triggered by pressing F2 on a symbol you want to rename.
 
 <!-- todo: gif here -->
 

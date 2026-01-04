@@ -70,9 +70,9 @@ If you have an idea what could be improved, feel free to open an issue or a PR.
 
 If you encounter a bug, please report it here: https://github.com/rszyma/vscode-kanata/issues
 
-### Building
+### Hacking
 
-See [this document](CONTRIBUTING.md) for build instructions.
+See [HACKING.md](HACKING.md) for build instructions and other useful bits for developers.
 
 ## Release notes
 

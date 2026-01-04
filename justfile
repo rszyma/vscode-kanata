@@ -32,6 +32,7 @@ bump_kanata:
     git add CHANGELOG.md kanata
     git commit -m "chore: bump kanata to $HASH"
 
+# Publishes a new release. The version needs to be without the "v" prefix.
 release VERSION:
     just _ensure_no_staged_changes
     vsce verify-pat rszyma

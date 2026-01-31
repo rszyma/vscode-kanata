@@ -45,7 +45,6 @@ use std::{
     vec,
 };
 use wasm_bindgen::prelude::*;
-use web_sys::console::log;
 
 mod helpers;
 use helpers::{
@@ -1056,16 +1055,15 @@ impl KanataLanguageServer {
         if let Some(document) = self.documents.get(&url) {
             Ok(Some(document.clone()))
         } else {
-            let tracked_docs_str = self
+            let tracked_docs_list = self
                 .documents
                 .keys()
                 .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
+                .collect::<Vec<_>>();
             log!(
-                "untracked doc: {}\nTracked: {:?}\nDiagnostic: {:?}",
+                "untracked doc: {}\n  All tracked documents: {:#?}\n  Diagnostic: {:?}",
                 url.to_string(),
-                tracked_docs_str,
+                tracked_docs_list,
                 span
             );
             Err(anyhow!("untracked doc"))

@@ -5,6 +5,12 @@ import {
   InitializeParams,
 } from "vscode-languageserver/node";
 import { KanataLanguageServer } from "../../out/kls";
+import { Console } from "console";
+
+// Redirect all console stdout output to stderr since LSP pipe uses stdout
+// and writing to stdout for anything other than LSP protocol will break
+// things badly.
+global.console = new Console(process.stderr, process.stderr);
 
 // Create LSP connection
 const connection = createConnection(ProposedFeatures.all);

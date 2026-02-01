@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Fixed: no longer print server logs to stdout (initial neovim support) ([#60](https://github.com/rszyma/vscode-kanata/issues/60))
 
 ### 0.15.0
 

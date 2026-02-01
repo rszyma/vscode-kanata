@@ -32,7 +32,7 @@ macro_rules! log {
 #[macro_export]
 macro_rules! log {
     ($($tokens:tt)*) => {
-        println!($($tokens)*)
+        eprintln!($($tokens)*)
     };
 }
 

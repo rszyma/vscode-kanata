@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.15.1
+
 * Updated kanata to [1d359bd](https://github.com/jtroo/kanata/tree/1d359bd)
 * Fixed: no longer print server logs to stdout (initial neovim support) ([#60](https://github.com/rszyma/vscode-kanata/issues/60))
 

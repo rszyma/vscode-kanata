@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.15.8
+
 * Updated kanata to [de7a3ed](https://github.com/jtroo/kanata/tree/de7a3ed)
 
 ### 0.15.7

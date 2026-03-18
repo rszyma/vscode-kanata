@@ -77,9 +77,24 @@ impl ExtParseTree {
                 layout
             };
 
+            // FIXME: indent before the first item is not taken into account...
+            let min_indent_in_defsrc: usize = defsrc_layout
+                .iter()
+                .rev()
+                .skip(1) // skip last elem, as it's usually 0 spaces, right before closing ")"
+                .map(|row_nodes_indent| {
+                    *row_nodes_indent
+                        .last()
+                        .expect("should always contain always at least 1 item")
+                })
+                .min()
+                .unwrap_or(0);
+
             let last_expr_index = deflayer.len() - 3;
             for (i, deflayer_item) in deflayer.iter_mut().skip(2).enumerate() {
                 let expr_graphemes_count = deflayer_item.expr.to_string().graphemes(true).count();
+
+                dbg!(&deflayer_item);
 
                 // NOTE: we're ignoring `pre_metadata` here on purpose.
                 // We're assuming that the passed ExtTree has not been modified after parsing,
@@ -99,6 +114,7 @@ impl ExtParseTree {
                 let new_post_metadata = formatted_deflayer_node_metadata(
                     expr_graphemes_count,
                     &defsrc_layout[i],
+                    min_indent_in_defsrc,
                     &comments,
                     is_the_last_expr_in_deflayer,
                     line_ending,
@@ -286,10 +302,12 @@ impl ExtParseTree {
 fn formatted_deflayer_node_metadata(
     expr_graphemes_count: usize,
     formatting_to_apply: &[usize],
+    min_indent_in_defsrc: usize,
     comments: &[&Comment],
     is_the_last_expr_in_deflayer: bool,
     line_ending: LineEndingSequence,
 ) -> Vec<Metadata> {
+    dbg!(&formatting_to_apply);
     if comments.is_empty() {
         formatted_deflayer_node_metadata_without_comments(
             expr_graphemes_count,
@@ -298,10 +316,13 @@ fn formatted_deflayer_node_metadata(
             line_ending,
         )
     } else {
-        let indent = formatting_to_apply.get(1).copied();
+        let next_line_indent = formatting_to_apply.get(1).copied();
+        let is_the_last_expr_in_row = formatting_to_apply.len() >= 2;
         collect_comments_into_metadata_vec(
             comments,
-            indent,
+            min_indent_in_defsrc,
+            next_line_indent,
+            is_the_last_expr_in_row,
             is_the_last_expr_in_deflayer,
             line_ending,
         )
@@ -351,26 +372,34 @@ fn formatted_deflayer_node_metadata_without_comments(
 
 fn collect_comments_into_metadata_vec(
     comments: &[&Comment],
+    min_indent_in_defsrc: usize,
     next_line_indent: Option<usize>,
-    is_the_last_expr_in_deflayer: bool,
-    line_ending: LineEndingSequence,
+    is_the_last_expr_of_row: bool,
+    is_the_last_expr_of_deflayer: bool,
+    line_end_sequence: LineEndingSequence,
 ) -> Vec<Metadata> {
-    // non-empty comments vec should be passed, but we're handling it anyways
-    if comments.is_empty() {
-        if next_line_indent.is_some() {
-            return vec![Metadata::Whitespace(line_ending.to_string())];
-        } else {
-            return vec![];
-        }
-    }
+    assert!(
+        !comments.is_empty(),
+        "empty comments should be handled earlier"
+    );
+
     let mut result: Vec<Metadata> = vec![Metadata::Whitespace(" ".to_string())];
 
     for (i, comment) in comments.iter().enumerate() {
+        let is_the_first_comment: bool = i == 0;
         let is_the_last_comment: bool = i + 1 == comments.len();
+
+        if is_the_first_comment && is_the_last_expr_of_row {
+            result.clear(); // trim the previously optimistically assumed space
+            result.push(Metadata::Whitespace(line_end_sequence.to_string()));
+            result.push(Metadata::Whitespace(" ".repeat(min_indent_in_defsrc)));
+        }
+
         result.push(Metadata::Comment((*comment).clone()));
+
         match comment {
             Comment::LineComment(_) => {
-                if !is_the_last_expr_in_deflayer {
+                if !is_the_last_expr_of_deflayer {
                     result.push(Metadata::Whitespace(
                         " ".repeat(next_line_indent.unwrap_or(0)),
                     ));
@@ -379,16 +408,16 @@ fn collect_comments_into_metadata_vec(
             Comment::BlockComment(_) => match next_line_indent {
                 Some(indent) => {
                     if is_the_last_comment {
-                        result.push(Metadata::Whitespace(line_ending.to_string()));
-                        if !is_the_last_expr_in_deflayer {
+                        result.push(Metadata::Whitespace(line_end_sequence.to_string()));
+                        if !is_the_last_expr_of_deflayer {
                             result.push(Metadata::Whitespace(" ".repeat(indent)));
                         }
-                    } else if !is_the_last_expr_in_deflayer {
+                    } else if !is_the_last_expr_of_deflayer {
                         result.push(Metadata::Whitespace(" ".to_string()));
                     }
                 }
                 None => {
-                    if !is_the_last_expr_in_deflayer {
+                    if !is_the_last_expr_of_deflayer {
                         result.push(Metadata::Whitespace(" ".to_string()));
                     }
                 }
@@ -420,6 +449,7 @@ impl Display for LineEndingSequence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     fn formats_correctly(input: &str, expected_output: &str) {
         _formats_correctly(input, expected_output)
@@ -434,7 +464,6 @@ mod tests {
             .defsrc_layout(tab_size)
             .expect("no err")
             .ok_or(anyhow!("expected Some"))?;
-        dbg!(&defsrc_layout);
 
         tree.use_defsrc_layout_on_deflayers(&defsrc_layout, tab_size, true, LineEndingSequence::LF);
 
@@ -663,5 +692,107 @@ mod tests {
     #[test]
     fn test_deflayer_slot_expand() {
         should_not_format("(defsrc 1 2 3 4) (deflayer base 1 @a grv 4)");
+    }
+
+    #[test]
+    fn test_no_format_comment_between_layout_rows_1() {
+        should_not_format(indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              ;; testing
+              1 2
+              3 4
+            )
+        "});
+    }
+
+    /// Regression test for https://github.com/rszyma/vscode-kanata/issues/54
+    #[test]
+    fn test_no_format_comment_between_layout_rows_2() {
+        should_not_format(indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+              ;; testing
+              3 4
+            )
+        "});
+    }
+
+    #[test]
+    fn test_no_format_comment_between_layout_rows_3() {
+        should_not_format(indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+              3 4
+              ;; testing
+            )
+        "});
+    }
+
+    #[test]
+    fn test_comment_between_layout_rows_4() {
+        formats_correctly(
+            indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+              3 4
+            ;; testing
+            )
+        "},
+            indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+              3 4
+              ;; testing
+            )
+        "},
+        );
+    }
+
+    #[test]
+    fn test_comment_between_layout_rows_5() {
+        formats_correctly(
+            indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+                ;; testing
+              3 4
+            )
+        "},
+            indoc! {"
+            (defsrc
+              1 2
+              3 4
+            )
+            (deflayer base
+              1 2
+              ;; testing
+              3 4
+            )
+        "},
+        );
     }
 }

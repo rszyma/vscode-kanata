@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [aed8ec4](https://github.com/jtroo/kanata/tree/aed8ec4)
 
 ### 0.15.8
 

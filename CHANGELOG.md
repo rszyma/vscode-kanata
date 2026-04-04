@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Updated kanata to [1681edb](https://github.com/jtroo/kanata/tree/1681edb)
 
 ### 0.15.10
 

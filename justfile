@@ -51,10 +51,10 @@ release VERSION:
     git push --tags
 
 use_local_parser:
-    sed -i 's/kanata\/parser/kanata-local\/parser/' kls/Cargo.toml
+    sed -i 's/kanata\/parser/kanata-local\/parser/' kanata-ls/Cargo.toml
 
 use_remote_parser:
-    sed -i 's/kanata-local\/parser/kanata\/parser/' kls/Cargo.toml
+    sed -i 's/kanata-local\/parser/kanata\/parser/' kanata-ls/Cargo.toml
 
 _add_to_changelog TEXT:
     sed -i '/no changes yet/Id' CHANGELOG.md

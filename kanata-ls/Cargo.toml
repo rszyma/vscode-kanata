@@ -1,9 +1,9 @@
 [package]
-name = "kls"
+name = "kanata-ls"
 version = "0.0.0"
 authors = ["rszyma <rszyma.dev@gmail.com>"]
 description = "Language server for kanata keyboard remapper"
-keywords = ["kanata", "lsp", "vscode"]
+keywords = ["kanata", "lsp"]
 categories = ["config", "development-tools", "parsing"]
 homepage = "https://github.com/rszyma/vscode-kanata"
 repository = "https://github.com/rszyma/vscode-kanata"

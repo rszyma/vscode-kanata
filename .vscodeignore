@@ -6,7 +6,7 @@
 !LICENSE
 !assets
 !out/client.js
-!out/kls_bg.wasm
+!out/kanata_ls_bg.wasm
 !out/server.js
 !package.json
 !README.md

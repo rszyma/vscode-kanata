@@ -2,9 +2,9 @@ name: cargo-checks
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,53 +15,53 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./kls
+        working-directory: ./kanata-ls
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
 
-    - name: Setup - cargo cache
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup - cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Setup - wasm-pack
-      run:  curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Setup - wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-    - name: Setup - rust target for wasm
-      run: rustup target add wasm32-unknown-unknown
+      - name: Setup - rust target for wasm
+        run: rustup target add wasm32-unknown-unknown
 
-    - name: Rust - test kls
-      run: cargo test
+      - name: Rust - test kanata-ls
+        run: cargo test
 
-    - name: Setup - install clippy
-      run: rustup component add clippy
+      - name: Setup - install clippy
+        run: rustup component add clippy
 
-    - name: Rust - Lint
-      run: cargo clippy -- -D warnings
+      - name: Rust - Lint
+        run: cargo clippy -- -D warnings
 
-    - name: Rust - Format
-      run: cargo fmt --check
+      - name: Rust - Format
+        run: cargo fmt --check
 
-    - name: Setup - Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '20'
-        cache: 'yarn'
+      - name: Setup - Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+          cache: "yarn"
 
-    - name: Setup - yarn
-      run: yarn
-      working-directory: .
+      - name: Setup - yarn
+        run: yarn
+        working-directory: .
 
-    - name: Build extension
-      run: make package
-      working-directory: .
+      - name: Build extension
+        run: make package
+        working-directory: .

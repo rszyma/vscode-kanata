@@ -4,7 +4,7 @@ import {
   PublishDiagnosticsParams,
   InitializeParams,
 } from "vscode-languageserver/node";
-import { KanataLanguageServer } from "../../out/kls";
+import { KanataLanguageServer } from "../../out/kanata_ls";
 import { Console } from "console";
 
 // Redirect all console stdout output to stderr since LSP pipe uses stdout

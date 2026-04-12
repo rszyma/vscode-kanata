@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.15.13
+
 * Updated kanata to [cdbc063](https://github.com/jtroo/kanata/tree/cdbc063)
 
 ### 0.15.12

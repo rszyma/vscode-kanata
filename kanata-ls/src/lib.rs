@@ -69,6 +69,8 @@ const KANATA_PARSER_HELP: &str = r"For more info, see the configuration guide or
     guide: https://github.com/jtroo/kanata/blob/main/docs/config.adoc
     ask: https://github.com/jtroo/kanata/discussions";
 
+const MAIN_CONFIG_FILE_DEFAULT: &str = "kanata.kbd";
+
 impl Kanata {
     fn new(
         def_local_keys_variant_to_apply: DefLocalKeysVariant,
@@ -125,7 +127,7 @@ impl Kanata {
 
     fn parse_workspace(
         &self,
-        root_folder: &Url,
+        project_root: &Url,
         main_cfg_file: &Path,
         all_documents: &Documents,
     ) -> KlsParserOutput {
@@ -139,7 +141,7 @@ impl Kanata {
         let mut loaded_files: HashSet<Url> = HashSet::default();
 
         let mut get_file_content_fn_impl = |filepath: &Path| {
-            let file_url = path_to_url(filepath, root_folder).map_err(|_| INVALID_PATH_ERROR)?;
+            let file_url = path_to_url(filepath, project_root).map_err(|_| INVALID_PATH_ERROR)?;
 
             log!("searching URL across opened documents: {}", file_url);
             let doc = all_documents.get(&file_url).ok_or_else(|| {
@@ -239,19 +241,53 @@ enum WorkspaceOptions {
         root: Option<Url>,
     },
     Workspace {
-        main_config_file: String,
-        root: Url,
+        main_config_file: PathBuf,
+        project_root: Url,
     },
 }
 
 impl WorkspaceOptions {
-    fn from_config(config: &Config, root_folder: Option<Url>) -> Self {
+    fn from_config(config: &Config, workspace_root: Option<Url>) -> Self {
         match config.includes_and_workspaces {
-            IncludesAndWorkspaces::Single => WorkspaceOptions::Single { root: root_folder },
-            IncludesAndWorkspaces::Workspace => WorkspaceOptions::Workspace {
-                main_config_file: config.main_config_file.clone(),
-                root: root_folder.expect("root folder should be set in workspace mode"),
+            IncludesAndWorkspaces::Single => WorkspaceOptions::Single {
+                root: workspace_root,
             },
+            IncludesAndWorkspaces::Workspace => {
+                let workspace_root =
+                    workspace_root.expect("root folder should be set in workspace mode");
+
+                let pb = PathBuf::from(config.main_config_file.clone());
+                let main_cfg_file = pb.as_path();
+
+                let dirname = main_cfg_file.parent().unwrap_or(Path::new(""));
+                let basename = match main_cfg_file.file_name() {
+                    Some(x) => x,
+                    None => {
+                        log!(
+                            "invalid main_cfg_file name, falling back to {}",
+                            MAIN_CONFIG_FILE_DEFAULT
+                        );
+                        Path::new(MAIN_CONFIG_FILE_DEFAULT).as_os_str()
+                    }
+                };
+
+                // Handle cases where the main file in a workspace subfolder, not directly in the workspace root.
+                // Also this handles case where `main_config_file` is an absolute path.
+                let project_root = match workspace_root
+                    .join(&dirname.join("").as_os_str().to_string_lossy())
+                {
+                    Ok(x) => x,
+                    Err(e) => {
+                        log!("failed setting project root from main_cfg_file, falling back to workspace root. Error: {:?}", e);
+                        workspace_root
+                    }
+                };
+
+                WorkspaceOptions::Workspace {
+                    main_config_file: basename.into(),
+                    project_root,
+                }
+            }
         }
     }
 }
@@ -311,8 +347,9 @@ impl KanataLanguageServer {
         };
 
         let workspace_options = WorkspaceOptions::from_config(&config, root_uri);
-        let env_vars: Vec<_> = config.env_variables.into_iter().collect();
+        log!("workspace_options: {:?}", &workspace_options);
 
+        let env_vars: Vec<_> = config.env_variables.into_iter().collect();
         log!("env variables: {:?}", &env_vars);
 
         Self {
@@ -653,8 +690,8 @@ impl KanataLanguageServer {
         log!("matching definition found: {:#?}", definition_link);
         let target_uri: Url = match &self.workspace_options {
             WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
-            WorkspaceOptions::Workspace { root, .. } => {
-                match path_to_url(Path::new(&definition_link.target_filename), root) {
+            WorkspaceOptions::Workspace { project_root, .. } => {
+                match path_to_url(Path::new(&definition_link.target_filename), project_root) {
                     Ok(x) => x,
                     Err(err) => {
                         log!("goto definition failed: {}", err);
@@ -696,8 +733,9 @@ impl KanataLanguageServer {
             .try_fold(vec![], |mut acc, reference_link| {
                 let target_uri: Url = match &self.workspace_options {
                     WorkspaceOptions::Single { .. } => source_doc_uri.clone(),
-                    WorkspaceOptions::Workspace { root, .. } => {
-                        match path_to_url(Path::new(&reference_link.target_filename), root) {
+                    WorkspaceOptions::Workspace { project_root, .. } => {
+                        match path_to_url(Path::new(&reference_link.target_filename), project_root)
+                        {
                             Ok(x) => x,
                             Err(err) => {
                                 log!("reference failed: {}", err);
@@ -934,7 +972,9 @@ impl KanataLanguageServer {
         };
         let path_to_url_fn = |path: &str| match &self.workspace_options {
             WorkspaceOptions::Single { .. } => Ok(source_doc_uri.clone()),
-            WorkspaceOptions::Workspace { root, .. } => path_to_url(Path::new(&path), root),
+            WorkspaceOptions::Workspace { project_root, .. } => {
+                path_to_url(Path::new(&path), project_root)
+            }
         };
         let symbol_locations = navigation::all_locations_of_symbol_at_pos(
             &params.text_document_position.position,
@@ -1042,7 +1082,9 @@ impl KanataLanguageServer {
 
     fn document_from_span(&self, span: &Span) -> anyhow::Result<Option<TextDocumentItem>> {
         let url: Url = match &self.workspace_options {
-            WorkspaceOptions::Workspace { root, .. }
+            WorkspaceOptions::Workspace {
+                project_root: root, ..
+            }
             | WorkspaceOptions::Single { root: Some(root) } => {
                 let filename = span.file_name();
                 Url::join(root, &filename).map_err(|e| anyhow!(e.to_string()))?
@@ -1144,13 +1186,9 @@ impl KanataLanguageServer {
         (doc, diagnostics)
     }
 
-    fn parse_workspace(&self, main_config_file: &str, root: &Url) -> KlsParserOutput {
-        log!("parse_workspace for main_config_file={}", main_config_file);
-        let pb = PathBuf::from(main_config_file);
-        let main_cfg_file = pb.as_path();
-
+    fn parse_workspace(&self, root: &Url, main_config_file: &Path) -> KlsParserOutput {
         self.kanata
-            .parse_workspace(root, main_cfg_file, &self.documents)
+            .parse_workspace(root, main_config_file, &self.documents)
     }
 
     fn parse_a_single_file_in_workspace(&self, doc: &TextDocumentItem) -> KlsParserOutput {
@@ -1224,8 +1262,8 @@ impl KanataLanguageServer {
             }
             WorkspaceOptions::Workspace {
                 main_config_file,
-                root,
-            } => match self.parse_workspace(main_config_file, root) {
+                project_root: root,
+            } => match self.parse_workspace(root, main_config_file) {
                 KlsParserOutput::Ok {
                     inactive_codes,
                     definition_locations,

@@ -2,7 +2,7 @@ use super::{parse_into_ext_tree_and_root_span, ExtParseTree};
 use crate::{path_to_url, WorkspaceOptions};
 use anyhow::{anyhow, Ok};
 use lsp_types::{TextDocumentItem, Url};
-use std::{collections::BTreeMap, iter, path::PathBuf, str::FromStr};
+use std::{collections::BTreeMap, iter};
 
 pub fn get_defsrc_keys(
     workspace_options: &WorkspaceOptions,
@@ -23,12 +23,10 @@ pub fn get_defsrc_keys(
         }
         WorkspaceOptions::Workspace {
             main_config_file,
-            root,
+            project_root: root,
         } => {
-            let main_config_file_path = PathBuf::from_str(main_config_file)
-                .map_err(|e| anyhow!("main_config_file is an invalid path: {}", e))?;
-            let main_config_file_url = path_to_url(&main_config_file_path, root)
-                .map_err(|e| anyhow!("failed to convert main_config_file_path to url: {}", e))?;
+            let main_config_file_url = path_to_url(main_config_file, root)
+                .map_err(|e| anyhow!("failed to convert main_config_file to url: {}", e))?;
 
             // Check if currently opened file is the main file.
             let main_tree: ExtParseTree = if main_config_file_url == *file_uri {

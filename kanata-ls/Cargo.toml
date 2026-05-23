@@ -1,7 +1,6 @@
 [package]
 name = "kanata-ls"
 version = "0.0.0"
-authors = ["rszyma <rszyma.dev@gmail.com>"]
 description = "Language server for kanata keyboard remapper"
 keywords = ["kanata", "lsp"]
 categories = ["config", "development-tools", "parsing"]

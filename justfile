@@ -6,13 +6,21 @@ build:
     git submodule update
     make package
 
-install: build
+install_to_code: build
     code --install-extension kanata.vsix --force
 
-install_release:
+install_to_codium: build
+    codium --install-extension kanata.vsix --force
+
+install_release_to_code:
     git submodule update
     make CARGO_FLAGS=--release package
     code --install-extension kanata.vsix --force
+
+install_release_to_codium:
+    git submodule update
+    make CARGO_FLAGS=--release package
+    codium --install-extension kanata.vsix --force
 
 # Creates a commit, that updates kanata to latest git and adds notice about it to CHANGELOG.md
 bump_kanata:
@@ -40,14 +48,14 @@ release VERSION:
     git checkout main
     git pull
     make CARGO_FLAGS=--release package
-    sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{VERSION}}\"/' package.json
-    sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{VERSION}}/' CHANGELOG.md
+    sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{ VERSION }}\"/' package.json
+    sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{ VERSION }}/' CHANGELOG.md
     vsce publish --yarn
     ovsx publish --yarn
     git add CHANGELOG.md package.json
-    git commit -m "Release v{{VERSION}}"
+    git commit -m "Release v{{ VERSION }}"
     git push
-    git tag v{{VERSION}}
+    git tag v{{ VERSION }}
     git push --tags
 
 use_local_parser:
@@ -58,7 +66,7 @@ use_remote_parser:
 
 _add_to_changelog TEXT:
     sed -i '/no changes yet/Id' CHANGELOG.md
-    sed -i "N;s/^### Unreleased\n/\0\n\* {{TEXT}}/" CHANGELOG.md
+    sed -i "N;s/^### Unreleased\n/\0\n\* {{ TEXT }}/" CHANGELOG.md
 
 _ensure_clean_directory:
     git diff-index --quiet HEAD --

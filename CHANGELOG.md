@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+* no changes yet
+
+### 0.15.22
+
 * Updated kanata to [45be1c2](https://github.com/jtroo/kanata/tree/45be1c2)
 * Fixed workspace mode not loading properly when `mainConfigFile` is in a subdirectory of the opened workspace ([#69](https://github.com/rszyma/vscode-kanata/issues/69))
 

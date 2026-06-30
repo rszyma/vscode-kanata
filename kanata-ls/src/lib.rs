@@ -1,12 +1,17 @@
+#[cfg(target_arch = "wasm32")]
 extern crate wee_alloc;
 
+#[cfg(target_arch = "wasm32")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[cfg(target_arch = "wasm32")]
+use crate::helpers::to_js_value;
 use crate::{
     formatter::defsrc_layout::LineEndingSequence,
-    helpers::{lsp_range_from_span, path_to_url, to_js_value, HashSet},
+    helpers::{lsp_range_from_span, path_to_url, HashSet},
 };
+
 use anyhow::{anyhow, bail};
 use formatter::{
     ext_tree::{Expr, ParseTreeNode},
@@ -17,13 +22,14 @@ use kanata_parser::{
     cfg::{sexpr::Span, FileContentProvider, ParseError},
     lsp_hints::InactiveCode,
 };
+#[cfg(target_arch = "wasm32")]
+use lsp_types::request::{
+    Formatting, GotoDefinition, HoverRequest, Initialize, PrepareRenameRequest, Rename, Request,
+};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidDeleteFiles,
         DidOpenTextDocument, DidSaveTextDocument, Initialized, Notification,
-    },
-    request::{
-        Formatting, GotoDefinition, HoverRequest, Initialize, PrepareRenameRequest, Rename, Request,
     },
     DeleteFilesParams, Diagnostic, DiagnosticSeverity, DiagnosticTag, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
@@ -36,6 +42,7 @@ use lsp_types::{
     VersionedTextDocumentIdentifier, WorkspaceEdit,
 };
 use serde::Deserialize;
+#[cfg(target_arch = "wasm32")]
 use serde_wasm_bindgen::from_value;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -44,6 +51,7 @@ use std::{
     str::{FromStr, Split},
     vec,
 };
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 mod helpers;
@@ -200,6 +208,27 @@ struct Config {
     dim_inactive_config_items: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            includes_and_workspaces: IncludesAndWorkspaces::Single,
+            main_config_file: MAIN_CONFIG_FILE_DEFAULT.to_string(),
+            def_local_keys_variant: match std::env::consts::OS {
+                "linux" => DefLocalKeysVariant::Linux,
+                "macos" => DefLocalKeysVariant::MacOS,
+                _ => DefLocalKeysVariant::Win,
+            },
+            format: ExtensionFormatterOptions {
+                enable: false,
+                use_defsrc_layout_on_deflayers: false,
+            },
+            env_variables: HashMap::new(),
+            dim_inactive_config_items: true,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, Copy)]
 enum IncludesAndWorkspaces {
     #[serde(rename = "single")]
@@ -300,6 +329,7 @@ pub struct ExtensionFormatterOptions {
     use_defsrc_layout_on_deflayers: bool,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct KanataLanguageServer {
     documents: Documents,
@@ -311,6 +341,17 @@ pub struct KanataLanguageServer {
 }
 
 /// Public API exposed via WASM.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct KanataLanguageServer {
+    documents: Documents,
+    kanata: Kanata,
+    workspace_options: WorkspaceOptions,
+    pending_diagnostics: Vec<PublishDiagnosticsParams>,
+    formatter: formatter::Formatter,
+    dim_inactive_config_items: bool,
+}
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl KanataLanguageServer {
     #[wasm_bindgen(constructor)]
@@ -380,6 +421,295 @@ impl KanataLanguageServer {
         to_js_value::<Result>(&self.initialize_impl(&params)).expect("no conversion error")
     }
 
+    /// Catch-all handler for notifications sent by the LSP client.
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onNotification)]
+    pub fn on_notification(&mut self, method: &str, params: JsValue) {
+        let params: serde_json::Value =
+            serde_wasm_bindgen::from_value(params).unwrap_or(serde_json::Value::Null);
+        self.on_notification_inner(method, params);
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDocumentFormatting)]
+    pub fn on_document_formatting(&mut self, params: JsValue) -> JsValue {
+        type Params = <Formatting as Request>::Params;
+        type Result = <Formatting as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_document_formatting_impl(&params))
+            .expect("no conversion error")
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDefinition)]
+    pub fn on_go_to_definition(&mut self, params: JsValue) -> JsValue {
+        type Params = <GotoDefinition as Request>::Params;
+        type Result = <GotoDefinition as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onHover)]
+    pub fn on_hover(&mut self, params: JsValue) -> JsValue {
+        type Params = <HoverRequest as Request>::Params;
+        type Result = <HoverRequest as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        let result = self.on_hover_impl(&params);
+        to_js_value::<Result>(&result).expect("no conversion error")
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onPrepareRenameRequest)]
+    pub fn on_prepare_rename(&mut self, params: JsValue) -> JsValue {
+        type Params = <PrepareRenameRequest as Request>::Params;
+        type Result = <PrepareRenameRequest as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_prepare_rename_impl(&params)).expect("no conversion error")
+    }
+
+    #[allow(unused_variables)]
+    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onRenameRequest)]
+    pub fn on_rename(&mut self, params: JsValue) -> JsValue {
+        type Params = <Rename as Request>::Params;
+        type Result = <Rename as Request>::Result;
+        let params = from_value::<Params>(params).expect("deserializes");
+        to_js_value::<Result>(&self.on_rename_impl(&params)).expect("no conversion error")
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl KanataLanguageServer {
+    fn send_diagnostics(&self, diagnostics: &Diagnostics) {
+        log!("sending diagnostics for {} files", diagnostics.len());
+        let this = &JsValue::null();
+        for params in diagnostics.values() {
+            let params = &to_js_value(params).unwrap();
+            if let Err(e) = self.send_diagnostics_callback.call1(this, params) {
+                log!("send_diagnostics params:\n{:?}\nJS error: {:?}", params, e);
+            }
+        }
+    }
+}
+
+/// Public API exposed via WASM
+#[cfg(not(target_arch = "wasm32"))]
+impl KanataLanguageServer {
+    pub fn new(params: InitializeParams) -> Self {
+        #[allow(deprecated)]
+        let InitializeParams {
+            mut root_uri,
+            initialization_options,
+            ..
+        } = params;
+
+        let mut config: Config = match initialization_options {
+            Some(opts) => serde_json::from_value(opts).unwrap_or_else(|e| {
+                log!(
+                    "failed to parse initializationOptions: {}, using defaults",
+                    e
+                );
+                Config::default()
+            }),
+            None => Config::default(),
+        };
+
+        log!("{:?}", &config);
+
+        match &mut root_uri {
+            Some(url) => {
+                log!("workspace root: {}", url.as_ref().to_string());
+                if !url.path().ends_with('/') {
+                    url.path_segments_mut()
+                        .expect("Invalid path")
+                        .pop_if_empty()
+                        .push("");
+                }
+            }
+            None => {
+                log!("workspace root is not set, forcing `WorkspaceOptions::Single`.");
+                config.includes_and_workspaces = IncludesAndWorkspaces::Single;
+            }
+        };
+
+        let workspace_options = WorkspaceOptions::from_config(&config, root_uri);
+        log!("workspace_options: {:?}", &workspace_options);
+
+        let env_vars: Vec<_> = config.env_variables.into_iter().collect();
+        log!("env variables: {:?}", &env_vars);
+
+        Self {
+            documents: BTreeMap::new(),
+            kanata: Kanata::new(config.def_local_keys_variant, env_vars),
+            formatter: Formatter {
+                options: config.format,
+                remove_extra_empty_lines: false,
+            },
+            workspace_options,
+            pending_diagnostics: Vec::new(),
+            dim_inactive_config_items: config.dim_inactive_config_items,
+        }
+    }
+
+    pub fn initialize(&mut self, params: &InitializeParams) -> InitializeResult {
+        self.initialize_impl(params)
+    }
+
+    pub fn on_notification(&mut self, method: &str, params: serde_json::Value) {
+        self.on_notification_inner(method, params);
+    }
+
+    pub fn on_document_formatting(
+        &mut self,
+        params: &DocumentFormattingParams,
+    ) -> Option<Vec<TextEdit>> {
+        self.on_document_formatting_impl(params)
+    }
+
+    pub fn on_go_to_definition(
+        &mut self,
+        params: &GotoDefinitionParams,
+    ) -> Option<GotoDefinitionResponse> {
+        self.on_go_to_definition_impl(params)
+    }
+
+    pub fn on_hover(&mut self, params: &HoverParams) -> Option<Hover> {
+        self.on_hover_impl(params)
+    }
+
+    pub fn on_prepare_rename(
+        &mut self,
+        params: &TextDocumentPositionParams,
+    ) -> Option<PrepareRenameResponse> {
+        self.on_prepare_rename_impl(params)
+    }
+
+    pub fn on_rename(&mut self, params: &RenameParams) -> Option<WorkspaceEdit> {
+        self.on_rename_impl(params)
+    }
+
+    pub fn take_pending_diagnostics(&mut self) -> Vec<PublishDiagnosticsParams> {
+        std::mem::take(&mut self.pending_diagnostics)
+    }
+
+    fn send_diagnostics(&mut self, diagnostics: &Diagnostics) {
+        log!("sending diagnostics for {} files", diagnostics.len());
+        for params in diagnostics.values() {
+            self.pending_diagnostics.push(params.clone());
+        }
+    }
+}
+
+// ── Shared implementation ─────────────────────────────────────────────────────
+
+impl KanataLanguageServer {
+    fn on_notification_inner(&mut self, method: &str, params: serde_json::Value) {
+        log!("notification: {}", method);
+
+        match method {
+            // Nothing to do when we receive the `Initialized` notification.
+            Initialized::METHOD => (),
+            DidOpenTextDocument::METHOD => {
+                let DidOpenTextDocumentParams { text_document } =
+                    serde_json::from_value(params).unwrap();
+                log!("opening: {}", text_document.uri);
+                if self.upsert_document(text_document).is_some() {
+                    log!("reopened tracked doc");
+                }
+                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
+                self.send_diagnostics(&diagnostics);
+            }
+            // We don't care when a document is closed -- we care about all Kanata files in a
+            // workspace folder regardless of which ones remain open.
+            DidCloseTextDocument::METHOD => (),
+            DidChangeTextDocument::METHOD => {
+                let params: DidChangeTextDocumentParams = serde_json::from_value(params).unwrap();
+
+                // Ensure we receive full -- not incremental -- updates.
+                assert_eq!(params.content_changes.len(), 1);
+                let change = params.content_changes.into_iter().next().unwrap();
+                assert!(change.range.is_none());
+
+                let VersionedTextDocumentIdentifier { uri, version } = params.text_document;
+
+                let updated_doc = TextDocumentItem::new(uri, "kanata".into(), version, change.text);
+
+                let uri = updated_doc.uri.clone();
+                if self.upsert_document(updated_doc).is_none() {
+                    log!("updated untracked doc: {}", uri);
+                }
+            }
+
+            // This is the type of event we'll receive when a Kanata file is deleted, either via the
+            // VS Code UI (right-click delete) or otherwise (e.g., `rm file.kbd` in a terminal).
+            // The event comes from the `deleteWatcher` file watcher in the extension client.
+            DidChangeWatchedFiles::METHOD => {
+                // todo: test this
+                let DidChangeWatchedFilesParams { changes } =
+                    serde_json::from_value(params).unwrap();
+                let uris: Vec<_> = changes
+                    .into_iter()
+                    .map(|FileEvent { uri, typ }| {
+                        assert_eq!(typ, FileChangeType::DELETED); // We only watch for `Deleted` events.
+                        uri
+                    })
+                    .collect();
+
+                self.on_did_change_watched_files(uris);
+            }
+
+            // This is the type of event we'll receive when *any* file or folder is deleted via the
+            // VS Code UI (right-click delete). These events are triggered by the
+            // `workspace.fileOperations.didDelete.filters[0].glob = '**'` capability we send from
+            // the TS server -> client, which then sends us `didDelete` events for *all files and
+            // folders within the current workspace*. This is how we are notified of directory
+            // deletions that might contain Kanata files, since they won't get picked up by the
+            // `deleteWatcher` created in the client for reasons elaborated below.
+            //
+            // We can ignore any Kanata file URIs received via this handler since they'll already be
+            // covered by a corresponding `DidChangeWatchedFiles` event emitted by the
+            // `deleteWatcher` file watcher in the extension client that watches for any
+            // `**/*.kbd` files deleted in the current workspace.
+            //
+            // In this handler we only care about *non-Kanata* URIs, which we treat as potential
+            // deletions of directories containing Kanata files since those won't get picked up by
+            // the `deleteWatcher` due to [a limitation of VS Code's file watching
+            // capabilities][0].
+            //
+            // [0]: https://github.com/microsoft/vscode/issues/60813
+            DidDeleteFiles::METHOD => {
+                // todo: test this
+                let DeleteFilesParams { files } = serde_json::from_value(params).unwrap();
+                let mut deleted_uris: Vec<Url> = vec![];
+                for FileDelete { uri } in files {
+                    match Url::parse(&uri) {
+                        Ok(uri) => deleted_uris.push(uri),
+                        Err(e) => log!("failed to parse URI: {}", e),
+                    }
+                }
+
+                for uri in deleted_uris {
+                    log!("detected file deletion: {}", uri);
+                    let removed_docs = self.remove_tracked_documents_in_dir(&uri);
+                    if !removed_docs.is_empty() {
+                        let KlsParsedWorkspace { diagnostics, .. } = self.parse();
+                        self.send_diagnostics(&diagnostics);
+                    }
+                }
+            }
+
+            DidSaveTextDocument::METHOD => {
+                let _params: DidSaveTextDocumentParams = serde_json::from_value(params).unwrap();
+                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
+                self.send_diagnostics(&diagnostics);
+            }
+
+            _ => log!("unsupported notification"),
+        }
+    }
+}
+
+impl KanataLanguageServer {
     fn initialize_impl(&mut self, _params: &InitializeParams) -> InitializeResult {
         let _sem_tokens_legend = SemanticTokensLegend {
             token_types: vec![
@@ -467,125 +797,6 @@ impl KanataLanguageServer {
         }
     }
 
-    /// Catch-all handler for notifications sent by the LSP client.
-    ///
-    /// This function receives a notification's `method` and `params` and dispatches to the
-    /// appropriate handler function based on `method`.
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onNotification)]
-    pub fn on_notification(&mut self, method: &str, params: JsValue) {
-        log!("notification: {}", method);
-
-        match method {
-            // Nothing to do when we receive the `Initialized` notification.
-            Initialized::METHOD => (),
-            DidOpenTextDocument::METHOD => {
-                let DidOpenTextDocumentParams { text_document } = from_value(params).unwrap();
-                log!("opening: {}", text_document.uri);
-                if self.upsert_document(text_document).is_some() {
-                    log!("reopened tracked doc");
-                }
-                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
-                self.send_diagnostics(&diagnostics);
-            }
-            // We don't care when a document is closed -- we care about all Kanata files in a
-            // workspace folder regardless of which ones remain open.
-            DidCloseTextDocument::METHOD => (),
-            DidChangeTextDocument::METHOD => {
-                let params: DidChangeTextDocumentParams = from_value(params).unwrap();
-
-                // Ensure we receive full -- not incremental -- updates.
-                assert_eq!(params.content_changes.len(), 1);
-                let change = params.content_changes.into_iter().next().unwrap();
-                assert!(change.range.is_none());
-
-                let VersionedTextDocumentIdentifier { uri, version } = params.text_document;
-
-                let updated_doc = TextDocumentItem::new(uri, "kanata".into(), version, change.text);
-
-                let uri = updated_doc.uri.clone();
-                if self.upsert_document(updated_doc).is_none() {
-                    log!("updated untracked doc: {}", uri);
-                }
-            }
-
-            // This is the type of event we'll receive when a Kanata file is deleted, either via the
-            // VS Code UI (right-click delete) or otherwise (e.g., `rm file.kbd` in a terminal).
-            // The event comes from the `deleteWatcher` file watcher in the extension client.
-            DidChangeWatchedFiles::METHOD => {
-                // todo: test this
-                let DidChangeWatchedFilesParams { changes } = from_value(params).unwrap();
-                let uris: Vec<_> = changes
-                    .into_iter()
-                    .map(|FileEvent { uri, typ }| {
-                        assert_eq!(typ, FileChangeType::DELETED); // We only watch for `Deleted` events.
-                        uri
-                    })
-                    .collect();
-
-                self.on_did_change_watched_files(uris);
-            }
-
-            // This is the type of event we'll receive when *any* file or folder is deleted via the
-            // VS Code UI (right-click delete). These events are triggered by the
-            // `workspace.fileOperations.didDelete.filters[0].glob = '**'` capability we send from
-            // the TS server -> client, which then sends us `didDelete` events for *all files and
-            // folders within the current workspace*. This is how we are notified of directory
-            // deletions that might contain Kanata files, since they won't get picked up by the
-            // `deleteWatcher` created in the client for reasons elaborated below.
-            //
-            // We can ignore any Kanata file URIs received via this handler since they'll already be
-            // covered by a corresponding `DidChangeWatchedFiles` event emitted by the
-            // `deleteWatcher` file watcher in the extension client that watches for any
-            // `**/*.kbd` files deleted in the current workspace.
-            //
-            // In this handler we only care about *non-Kanata* URIs, which we treat as potential
-            // deletions of directories containing Kanata files since those won't get picked up by
-            // the `deleteWatcher` due to [a limitation of VS Code's file watching
-            // capabilities][0].
-            //
-            // [0]: https://github.com/microsoft/vscode/issues/60813
-            DidDeleteFiles::METHOD => {
-                // todo: test this
-                let DeleteFilesParams { files } = from_value(params).unwrap();
-                let mut deleted_uris: Vec<Url> = vec![];
-                for FileDelete { uri } in files {
-                    match Url::parse(&uri) {
-                        Ok(uri) => deleted_uris.push(uri),
-                        Err(e) => log!("failed to parse URI: {}", e),
-                    }
-                }
-
-                for uri in deleted_uris {
-                    log!("detected file deletion: {}", uri);
-                    let removed_docs = self.remove_tracked_documents_in_dir(&uri);
-                    if !removed_docs.is_empty() {
-                        let KlsParsedWorkspace { diagnostics, .. } = self.parse();
-                        self.send_diagnostics(&diagnostics);
-                    }
-                }
-            }
-
-            DidSaveTextDocument::METHOD => {
-                let _params: DidSaveTextDocumentParams = from_value(params).unwrap();
-                let KlsParsedWorkspace { diagnostics, .. } = self.parse();
-                self.send_diagnostics(&diagnostics);
-            }
-
-            _ => log!("unsupported notification"),
-        }
-    }
-
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDocumentFormatting)]
-    pub fn on_document_formatting(&mut self, params: JsValue) -> JsValue {
-        type Params = <Formatting as Request>::Params;
-        type Result = <Formatting as Request>::Result;
-        let params = from_value::<Params>(params).expect("deserializes");
-        to_js_value::<Result>(&self.on_document_formatting_impl(&params))
-            .expect("no conversion error")
-    }
-
     /// Returns None on error.
     fn on_document_formatting_impl(
         &mut self,
@@ -641,15 +852,6 @@ impl KanataLanguageServer {
             range,
             new_text: tree.to_string(),
         }])
-    }
-
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onDefinition)]
-    pub fn on_go_to_definition(&mut self, params: JsValue) -> JsValue {
-        type Params = <GotoDefinition as Request>::Params;
-        type Result = <GotoDefinition as Request>::Result;
-        let params = from_value::<Params>(params).expect("deserializes");
-        to_js_value::<Result>(&self.on_go_to_definition_impl(&params)).expect("no conversion error")
     }
 
     /// Returns None on error.
@@ -752,16 +954,6 @@ impl KanataLanguageServer {
                 });
                 Some(acc)
             })
-    }
-
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onHover)]
-    pub fn on_hover(&mut self, params: JsValue) -> JsValue {
-        type Params = <HoverRequest as Request>::Params;
-        type Result = <HoverRequest as Request>::Result;
-        let params = from_value::<Params>(params).expect("deserializes");
-        let result = self.on_hover_impl(&params);
-        to_js_value::<Result>(&result).expect("no conversion error")
     }
 
     fn on_hover_impl(&mut self, params: &HoverParams) -> Option<Hover> {
@@ -894,15 +1086,6 @@ impl KanataLanguageServer {
         })
     }
 
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onPrepareRenameRequest)]
-    pub fn on_prepare_rename(&mut self, params: JsValue) -> JsValue {
-        type Params = <PrepareRenameRequest as Request>::Params;
-        type Result = <PrepareRenameRequest as Request>::Result;
-        let params = from_value::<Params>(params).expect("deserializes");
-        to_js_value::<Result>(&self.on_prepare_rename_impl(&params)).expect("no conversion error")
-    }
-
     fn on_prepare_rename_impl(
         &mut self,
         params: &TextDocumentPositionParams,
@@ -941,15 +1124,6 @@ impl KanataLanguageServer {
 
         log!("on_prepare_rename_impl: not found any renameable token at the given position");
         None
-    }
-
-    #[allow(unused_variables)]
-    #[wasm_bindgen(js_class = KanataLanguageServer, js_name = onRenameRequest)]
-    pub fn on_rename(&mut self, params: JsValue) -> JsValue {
-        type Params = <Rename as Request>::Params;
-        type Result = <Rename as Request>::Result;
-        let params = from_value::<Params>(params).expect("deserializes");
-        to_js_value::<Result>(&self.on_rename_impl(&params)).expect("no conversion error")
     }
 
     /// Returns None on error.
@@ -1067,17 +1241,6 @@ impl KanataLanguageServer {
                 doc.to_owned()
             })
             .collect()
-    }
-
-    fn send_diagnostics(&self, diagnostics: &Diagnostics) {
-        log!("sending diagnostics for {} files", diagnostics.len());
-        let this = &JsValue::null();
-        for params in diagnostics.values() {
-            let params = &to_js_value(&params).unwrap();
-            if let Err(e) = self.send_diagnostics_callback.call1(this, params) {
-                log!("send_diagnostics params:\n{:?}\nJS error: {:?}", params, e);
-            }
-        }
     }
 
     fn document_from_span(&self, span: &Span) -> anyhow::Result<Option<TextDocumentItem>> {

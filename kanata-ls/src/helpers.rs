@@ -337,6 +337,7 @@ macro_rules! url_map_references {
     };
 }
 
+#[cfg(target_arch = "wasm32")]
 /// Converts a Rust value into a [`JsValue`].
 pub fn to_js_value<T: serde::ser::Serialize + ?Sized>(
     value: &T,

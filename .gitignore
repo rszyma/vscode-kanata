@@ -5,6 +5,7 @@ yarn-error.log
 .vscode-test
 *.vsix
 .envrc
+.vscode
 
 # A symbolic link to a local development kanata repo for testing changes.
 kanata-local

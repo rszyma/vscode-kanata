@@ -1,12 +1,10 @@
-.PHONY: test lint typecheck fmtcheck fmt package wasm clean
+.PHONY: test lint typecheck fmtcheck fmt package build-wasm build-native run-native clean
 
-test: wasm
+test:
 	# yarn test
+	cd kanata-ls; cargo test
 
-lint: wasm
-	yarn lint
-
-typecheck: wasm
+typecheck: build-wasm
 	yarn typecheck
 
 fmtcheck: clean
@@ -15,13 +13,31 @@ fmtcheck: clean
 fmt: clean
 	yarn fmtwrite
 
-package: wasm
+package: build-wasm
 	yarn package
 
-CARGO_FLAGS ?= --dev
+RELEASE ?= 0
 
-wasm: clean
-	$(MAKE) CARGO_FLAGS=$(CARGO_FLAGS) OUT_DIR=$$(pwd)/out -C kanata-ls build
+build-wasm: clean
+ifeq ($(RELEASE),1)
+	$(MAKE) CARGO_FLAGS=--release OUT_DIR=$$(pwd)/out -C kanata-ls build-wasm
+else
+	$(MAKE) CARGO_FLAGS=--dev OUT_DIR=$$(pwd)/out -C kanata-ls build-wasm
+endif
+
+build-native: clean
+ifeq ($(RELEASE),1)
+	$(MAKE) CARGO_FLAGS=--release -C kanata-ls build-native
+else
+	$(MAKE) -C kanata-ls build-native
+endif
+
+run-native: clean
+ifeq ($(RELEASE),1)
+	$(MAKE) CARGO_FLAGS=--release -C kanata-ls run-native
+else
+	$(MAKE) -C kanata-ls run-native
+endif
 
 node_modules: package.json
 	yarn install

@@ -1,10 +1,11 @@
 _default:
     @just -l --unsorted
 
-# Build in debug mode.
+# Build all in debug mode.
 build:
     git submodule update
     make package
+    make build-native
 
 install_to_code: build
     code --install-extension kanata.vsix --force
@@ -14,12 +15,12 @@ install_to_codium: build
 
 install_release_to_code:
     git submodule update
-    make CARGO_FLAGS=--release package
+    make RELEASE=1 package
     code --install-extension kanata.vsix --force
 
 install_release_to_codium:
     git submodule update
-    make CARGO_FLAGS=--release package
+    make RELEASE=1 package
     codium --install-extension kanata.vsix --force
 
 # Creates a commit, that updates kanata to latest git and adds notice about it to CHANGELOG.md
@@ -46,8 +47,8 @@ release VERSION:
     vsce verify-pat rszyma
     ovsx verify-pat rszyma
     git checkout main
-    git pull
-    make CARGO_FLAGS=--release package
+    git pull 
+    make RELEASE=1 package
     sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"{{ VERSION }}\"/' package.json
     sed -i 's/### Unreleased/### Unreleased\n\n* no changes yet\n\n### {{ VERSION }}/' CHANGELOG.md
     vsce publish --yarn

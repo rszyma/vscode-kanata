@@ -1,13 +1,14 @@
-.PHONY: build test require-out-dir
+.PHONY: build-native build-wasm test-wasm require-out-dir
 
-CARGO_FLAGS ?= --dev
+run-native:
+	cargo run $(CARGO_FLAGS)
 
-build: require-out-dir
-	wasm-pack build $(CARGO_FLAGS) --target nodejs --out-dir $(OUT_DIR)
+build-native:
+	cargo build $(CARGO_FLAGS)
+
+build-wasm: require-out-dir
+	wasm-pack build $${CARGO_FLAGS:---dev} --target nodejs --out-dir $(OUT_DIR)
 	rm -f $(OUT_DIR)/.gitignore $(OUT_DIR)/package.json
-
-test:
-	wasm-pack test --node
 
 require-out-dir:
 ifndef OUT_DIR

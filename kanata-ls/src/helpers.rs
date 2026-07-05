@@ -31,9 +31,10 @@ macro_rules! log {
 #[cfg(not(target_os = "unknown"))]
 #[macro_export]
 macro_rules! log {
-    ($($tokens:tt)*) => {
-        eprintln!($($tokens)*)
-    };
+    ($($tokens:tt)*) => {{
+        eprint!("kanata-ls: ");
+        eprintln!($($tokens)*);
+    }};
 }
 
 #[cfg(target_os = "unknown")]
@@ -337,6 +338,7 @@ macro_rules! url_map_references {
     };
 }
 
+#[cfg(target_arch = "wasm32")]
 /// Converts a Rust value into a [`JsValue`].
 pub fn to_js_value<T: serde::ser::Serialize + ?Sized>(
     value: &T,

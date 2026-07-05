@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* no changes yet
+* Added initial support for native compilation target ([#71](https://github.com/rszyma/vscode-kanata/pull/71))
 
 ### 0.15.23
 

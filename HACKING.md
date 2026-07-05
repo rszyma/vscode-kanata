@@ -12,7 +12,7 @@ git submodule init
 git submodule update
 make package
 # or alternatively build in release mode:
-# make CARGO_FLAGS=--release package
+# make RELEASE=1 package
 ```
 1. To install:
     - Right click on `kanata.vsix` file in VS Code file explorer and "Install Extension VSIX"...

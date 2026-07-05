@@ -23,33 +23,26 @@
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
-        target = "wasm32-unknown-unknown";
-        targetUpperSnake = pkgs.lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] target);
+        targets = [
+          "wasm32-unknown-unknown"
+          "x86_64-unknown-linux-gnu"
+        ];
         toolchainOverride = {
           extensions = [ "rust-src" ];
-          targets = [ target ];
+          inherit targets;
         };
       in
       {
         devShells.default = pkgs.mkShell {
-          RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
-          "CARGO_TARGET_${targetUpperSnake}_LINKER" = "${pkgs.lld_18}/bin/lld";
-          RUSTFLAGS = nixpkgs.lib.strings.concatStringsSep " " [
-            # "-C link-arg=-fuse-ld=${pkgs.mold}"
-            # "-C link-arg=--ld-path=${pkgs.mold}"
-            # "-Zlinker-features=-lld"
-          ];
           nativeBuildInputs = with pkgs; [
             # (rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override toolchainOverride))
             (rust-bin.stable.latest.default.override toolchainOverride)
             # (rust-bin.stable."1.73.0".default.override toolchainOverride)
             just
-            git
             yarn
             wasm-pack
             vsce
             (pkgs.writeShellScriptBin "ovsx" "${pkgs.nodejs_24}/bin/npx ovsx $@")
-            sccache
           ];
         };
       }

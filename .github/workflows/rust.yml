@@ -40,14 +40,26 @@ jobs:
       - name: Setup - rust target for wasm
         run: rustup target add wasm32-unknown-unknown
 
-      - name: Rust - test kanata-ls
-        run: cargo test
+      - name: Build native kanata-ls binary
+        run: make build-native
+        working-directory: .
+
+      # this has run after native build due to relying on a built binary existing (cli_integration.rs)
+      - name: Rust - Test (native)
+        run: cargo test --target x86_64-unknown-linux-gnu
+
+      # we don't have any wasm tests currently
+      # - name: Rust - Test (wasm)
+      #   run: wasm-pack test --node
 
       - name: Setup - install clippy
         run: rustup component add clippy
 
-      - name: Rust - Lint
-        run: cargo clippy -- -D warnings
+      - name: Rust - Lint (wasm)
+        run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Rust - Lint (native)
+        run: cargo clippy --target x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Rust - Format
         run: cargo fmt --check
@@ -62,6 +74,6 @@ jobs:
         run: yarn
         working-directory: .
 
-      - name: Build extension
+      - name: Build vscode extension
         run: make package
         working-directory: .

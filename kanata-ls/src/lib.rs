@@ -208,7 +208,7 @@ impl Default for Config {
             def_local_keys_variant: match std::env::consts::OS {
                 "linux" => DefLocalKeysVariant::Linux,
                 "macos" => DefLocalKeysVariant::MacOS,
-                _ => DefLocalKeysVariant::Win,
+                _ => DefLocalKeysVariant::WinIOv2,
             },
             format: ExtensionFormatterOptions {
                 enable: false,

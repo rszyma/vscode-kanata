@@ -2,7 +2,7 @@
 
 ### Unreleased
 
-* Updated kanata to [c391826](https://github.com/jtroo/kanata/tree/c391826)
+* Updated kanata to [44edba2](https://github.com/jtroo/kanata/tree/44edba2)
 * Added initial support for native compilation target ([#71](https://github.com/rszyma/vscode-kanata/pull/71))
 
 ### 0.15.23

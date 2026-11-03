@@ -280,8 +280,8 @@ function getLocalKeysVariant(): LocalKeysVariant {
           .catch((e) => {
             outputChannel.appendLine(`error: ${e}`);
           });
-        // Use 'deflocalkeys-win' as a fallback, since that's the most common variant, I guess.
-        return "deflocalkeys-win";
+        // Use 'deflocalkeys-winiov2' as a fallback, since that's the most common variant, I guess.
+        return "deflocalkeys-winiov2";
     }
   }
 
